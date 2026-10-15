@@ -1,0 +1,2002 @@
+     1→     1→je veux creer une aide au devoir. on importe les cours voulu, on les titre dans le logiciel, les agents parcourent le documents et disent quand ils sont prets a agir et on a une interface qui apparait où on oeut poser toutes les questions qui sont dans le document ou tiré de l'actualité ou des recherches ou des possibles livres que l'on peut importer sans limites dans le projet (png ou jpeg inclus). Ils pourront accueillir les API Agnes et Mistral par exemple que le user pourra inserer et avoir la confirmation que tout est okay et bien enregistré et commencer à travailler.
+     2→     2→The user wants to create a homework help application in French. Let me understand the requirements:
+     3→     3→
+     4→     4→Import courses/documents they want
+     5→     5→
+     6→     6→Title them in the software
+     7→     7→
+     8→     8→Agents scan the documents and say when they're ready to act
+     9→     9→
+    10→    10→An interface appears where you can ask questions from the document, current events, research, or possible books
+    11→    11→
+    12→    12→Import unlimited books (including PNG/JPEG images)
+    13→    13→
+    14→    14→Support APIs like Agnes (probably "Agnes AI"?) and Mistral
+    15→    15→
+    16→    16→User can insert their API keys, get confirmation everything is OK and saved
+    17→    17→
+    18→    18→Start working
+    19→    19→
+    20→    20→Let me design a comprehensive architecture and provide code/guidance.
+    21→    21→
+    22→    22→I'll write this in French since the user wrote in French.
+    23→    23→
+    24→    24→Let me structure a full project:
+    25→    25→
+    26→    26→Architecture:
+    27→    27→
+    28→    28→Frontend: React/Next.js or simple HTML/JS
+    29→    29→
+    30→    30→Backend: FastAPI (Python) or Node.js
+    31→    31→
+    32→    32→Document processing: PDF, DOCX, TXT, PNG/JPEG (OCR)
+    33→    33→
+    34→    34→Vector store: ChromaDB / FAISS / Qdrant
+    35→    35→
+    36→    36→LLM: Mistral API, Agnes API (I'll assume it's an AI API)
+    37→    37→
+    38→    38→Agents: orchestration with LangChain or custom
+    39→    39→
+    40→    40→Let me provide a working starter project.
+    41→    41→
+    42→    42→Actually, let me think about "Agnes" - I'm not sure what Agnes AI is. There's "Agnes AI" which might be some AI service. I'll treat it as a generic OpenAI-compatible API.
+    43→    43→
+    44→    44→Let me write a complete guide with code.
+    45→    45→
+    46→    46→I'll create:
+    47→    47→
+    48→    48→Project structure
+    49→    49→
+    50→    50→Backend (FastAPI) with:
+    51→    51→
+    52→    52→Document upload endpoint
+    53→    53→
+    54→    54→OCR for images
+    55→    55→
+    56→    56→Vector indexing
+    57→    57→
+    58→    58→API key management (encrypted)
+    59→    59→
+    60→    60→Agent orchestration
+    61→    61→
+    62→    62→Chat endpoint
+    63→    63→
+    64→    64→Frontend (simple React or vanilla)
+    65→    65→
+    66→    66→Let me write it concisely but functionally.
+    67→    67→
+    68→    68→I'll produce a well-structured response with:
+    69→    69→
+    70→    70→Overview of architecture
+    71→    71→
+    72→    72→Tech stack choices
+    73→    73→
+    74→    74→Project structure
+    75→    75→
+    76→    76→Key code files
+    77→    77→
+    78→    78→Setup instructions
+    79→    79→
+    80→    80→Let me keep it practical.
+    81→    81→
+    82→    82→🎓 Aide au Devoir — Architecture & Projet complet
+    83→    83→Voici une conception complète et un starter fonctionnel pour ton application.
+    84→    84→
+    85→    85→1. Architecture globale
+    86→    86→text
+    87→    87→┌─────────────────────────────────────────────────────────────┐
+    88→    88→│  FRONTEND (Next.js / React + Tailwind)                      │
+    89→    89→│  - Import de cours (PDF, DOCX, TXT, PNG, JPEG)              │
+    90→    90→│  - Gestion des titres / matières                            │
+    91→    91→│  - Champ API keys (Mistral, Agnes) + bouton "Tester"        │
+    92→    92→│  - Interface Q/R type chat                                  │
+    93→    93→└───────────────┬─────────────────────────────────────────────┘
+    94→    94→                │ REST / WebSocket
+    95→    95→┌───────────────▼─────────────────────────────────────────────┐
+    96→    96→│  BACKEND (FastAPI Python)                                   │
+    97→    97→│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
+    98→    98→│  │ Ingestion    │  │ Vector Store │  │ Agents           │  │
+    99→    99→│  │ PDF/DOCX/OCR │─▶│ ChromaDB     │◀─│ (Planner,        │  │
+   100→   100→│  │ (Tesseract)  │  │ (embeddings) │  │  Retriever,      │  │
+   101→   101→│  └──────────────┘  └──────────────┘  │  Solver, Tutor)  │  │
+   102→   102→│                                       └────────┬─────────┘  │
+   103→   103→│  ┌────────────────────────────────────────────▼─────────┐  │
+   104→   104→│  │ LLM Router : Mistral | Agnes | OpenAI-compat         │  │
+   105→   105→│  └──────────────────────────────────────────────────────┘  │
+   106→   106→│  SQLite/Postgres : users, docs, clés API chiffrées         │
+   107→   107→└─────────────────────────────────────────────────────────────┘
+   108→   108→2. Stack recommandée
+   109→   109→Couche  Choix
+   110→   110→Frontend        Next.js 14 + Tailwind + shadcn/ui
+   111→   111→Backend FastAPI (Python 3.11)
+   112→   112→Vector DB       ChromaDB (local, simple)
+   113→   113→OCR     Tesseract + pytesseract (images) / pdfplumber (PDF texte)
+   114→   114→Embeddings      mistral-embed (Mistral) ou sentence-transformers local
+   115→   115→LLM     Mistral API + Agnes API (via adaptateur OpenAI-compatible)
+   116→   116→Secrets cryptography.Fernet + clé maître en .env
+   117→   117→Agents  Orchestration maison (voir §5)
+   118→   118→3. Structure du projet
+   119→   119→text
+   120→   120→aide-devoir/
+   121→   121→├── backend/
+   122→   122→│   ├── main.py
+   123→   123→│   ├── config.py
+   124→   124→│   ├── security.py
+   125→   125→│   ├── database.py
+   126→   126→│   ├── ingestion.py          # PDF/DOCX/IMG → texte → chunks
+   127→   127→│   ├── vector_store.py       # ChromaDB
+   128→   128→│   ├── llm_router.py         # Mistral / Agnes
+   129→   129→│   ├── agents.py             # Planner, Retriever, Solver, Tutor
+   130→   130→│   ├── routes/
+   131→   131→│   │   ├── documents.py
+   132→   132→│   │   ├── api_keys.py
+   133→   133→│   │   └── chat.py
+   134→   134→│   └── requirements.txt
+   135→   135→└── frontend/
+   136→   136→    ├── app/
+   137→   137→    │   ├── page.tsx           # Dashboard
+   138→   138→    │   ├── upload/page.tsx
+   139→   139→    │   ├── settings/page.tsx  # API keys
+   140→   140→    │   └── chat/page.tsx
+   141→   141→    └── lib/api.ts
+   142→   142→4. Backend — code clé
+   143→   143→requirements.txt
+   144→   144→text
+   145→   145→fastapi
+   146→   146→uvicorn[standard]
+   147→   147→python-multipart
+   148→   148→sqlalchemy
+   149→   149→cryptography
+   150→   150→chromadb
+   151→   151→sentence-transformers
+   152→   152→pytesseract
+   153→   153→pdfplumber
+   154→   154→python-docx
+   155→   155→Pillow
+   156→   156→httpx
+   157→   157→pydantic
+   158→   158→config.py
+   159→   159→python
+   160→   160→import os
+   161→   161→from pathlib import Path
+   162→   162→
+   163→   163→BASE_DIR = Path(__file__).parent
+   164→   164→DATA_DIR = BASE_DIR / "data"
+   165→   165→UPLOAD_DIR = DATA_DIR / "uploads"
+   166→   166→CHROMA_DIR = DATA_DIR / "chroma"
+   167→   167→for d in (DATA_DIR, UPLOAD_DIR, CHROMA_DIR):
+   168→   168→    d.mkdir(parents=True, exist_ok=True)
+   169→   169→
+   170→   170→# Clé maître pour chiffrer les clés API des utilisateurs
+   171→   171→MASTER_KEY = os.environ.get("MASTER_KEY", "change-me-in-prod-32-bytes-base64==")
+   172→   172→security.py — chiffrement des clés API
+   173→   173→python
+   174→   174→import base64, hashlib
+   175→   175→from cryptography.fernet import Fernet
+   176→   176→from config import MASTER_KEY
+   177→   177→
+   178→   178→def _fernet() -> Fernet:
+   179→   179→    key = base64.urlsafe_b64encode(hashlib.sha256(MASTER_KEY.encode()).digest())
+   180→   180→    return Fernet(key)
+   181→   181→
+   182→   182→def encrypt(value: str) -> str:
+   183→   183→    return _fernet().encrypt(value.encode()).decode()
+   184→   184→
+   185→   185→def decrypt(token: str) -> str:
+   186→   186→    return _fernet().decrypt(token.encode()).decode()
+   187→   187→
+   188→   188→def mask(key: str) -> str:
+   189→   189→    return key[:4] + "…" + key[-4:] if len(key) > 8 else "****"
+   190→   190→database.py
+   191→   191→python
+   192→   192→from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, Text
+   193→   193→from sqlalchemy.orm import declarative_base, sessionmaker
+   194→   194→from datetime import datetime
+   195→   195→from config import DATA_DIR
+   196→   196→
+   197→   197→engine = create_engine(f"sqlite:///{DATA_DIR/'app.db'}", connect_args={"check_same_thread": False})
+   198→   198→SessionLocal = sessionmaker(bind=engine, autoflush=False)
+   199→   199→Base = declarative_base()
+   200→   200→
+   201→   201→class Document(Base):
+   202→   202→    __tablename__ = "documents"
+   203→   203→    id = Column(Integer, primary_key=True)
+   204→   204→    title = Column(String, index=True)
+   205→   205→    subject = Column(String, default="général")
+   206→   206→    kind = Column(String)                 # pdf/docx/txt/png/jpeg
+   207→   207→    path = Column(String)
+   208→   208→    text = Column(Text)                   # texte extrait (pour recherche rapide)
+   209→   209→    created_at = Column(DateTime, default=datetime.utcnow)
+   210→   210→
+   211→   211→class ApiKey(Base):
+   212→   212→    __tablename__ = "api_keys"
+   213→   213→    id = Column(Integer, primary_key=True)
+   214→   214→    provider = Column(String, unique=True)   # "mistral" | "agnes"
+   215→   215→    encrypted = Column(String)
+   216→   216→    verified_at = Column(DateTime, nullable=True)
+   217→   217→
+   218→   218→Base.metadata.create_all(engine)
+   219→   219→ingestion.py — PDF / DOCX / TXT / IMG
+   220→   220→python
+   221→   221→from pathlib import Path
+   222→   222→import pdfplumber, pytesseract
+   223→   223→from docx import Document as DocxDocument
+   224→   224→from PIL import Image
+   225→   225→
+   226→   226→def extract_text(path: Path) -> str:
+   227→   227→    ext = path.suffix.lower()
+   228→   228→    if ext == ".pdf":
+   229→   229→        with pdfplumber.open(path) as pdf:
+   230→   230→            txt = "\n".join(p.extract_text() or "" for p in pdf.pages)
+   231→   231→        # Si PDF scanné → OCR fallback
+   232→   232→        if len(txt.strip()) < 50:
+   233→   233→            imgs = []
+   234→   234→            with pdfplumber.open(path) as pdf:
+   235→   235→                for p in pdf.pages:
+   236→   236→                    imgs.append(p.to_image(resolution=200).original)
+   237→   237→            return "\n".join(pytesseract.image_to_string(i, lang="fra+eng") for i in imgs)
+   238→   238→        return txt
+   239→   239→    if ext == ".docx":
+   240→   240→        return "\n".join(p.text for p in DocxDocument(path).paragraphs)
+   241→   241→    if ext == ".txt":
+   242→   242→        return path.read_text(encoding="utf-8", errors="ignore")
+   243→   243→    if ext in (".png", ".jpg", ".jpeg"):
+   244→   244→        return pytesseract.image_to_string(Image.open(path), lang="fra+eng")
+   245→   245→    raise ValueError(f"Format non supporté : {ext}")
+   246→   246→
+   247→   247→def chunk(text: str, size: int = 800, overlap: int = 120):
+   248→   248→    chunks, i = [], 0
+   249→   249→    while i < len(text):
+   250→   250→        chunks.append(text[i:i+size])
+   251→   251→        i += size - overlap
+   252→   252→    return [c for c in chunks if c.strip()]
+   253→   253→vector_store.py
+   254→   254→python
+   255→   255→import chromadb
+   256→   256→from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
+   257→   257→from config import CHROMA_DIR
+   258→   258→
+   259→   259→_client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+   260→   260→_embed = SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+   261→   261→_collection = _client.get_or_create_collection("cours", embedding_function=_embed)
+   262→   262→
+   263→   263→def index_chunks(doc_id: int, title: str, chunks: list[str]):
+   264→   264→    _collection.add(
+   265→   265→        ids=[f"{doc_id}-{i}" for i in range(len(chunks))],
+   266→   266→        documents=chunks,
+   267→   267→        metadatas=[{"doc_id": doc_id, "title": title, "chunk": i} for i in range(len(chunks))],
+   268→   268→    )
+   269→   269→
+   270→   270→def search(query: str, k: int = 5):
+   271→   271→    r = _collection.query(query_texts=[query], n_results=k)
+   272→   272→    out = []
+   273→   273→    for doc, meta, dist in zip(r["documents"][0], r["metadatas"][0], r["distances"][0]):
+   274→   274→        out.append({"text": doc, "meta": meta, "score": 1 - dist})
+   275→   275→    return out
+   276→   276→llm_router.py — adaptateur Mistral / Agnes
+   277→   277→python
+   278→   278→import httpx
+   279→   279→from database import SessionLocal, ApiKey
+   280→   280→from security import decrypt
+   281→   281→
+   282→   282→PROVIDERS = {
+   283→   283→    "mistral": {
+   284→   284→        "base_url": "https://api.mistral.ai/v1",
+   285→   285→        "model": "mistral-large-latest",
+   286→   286→        "test_path": "/models",
+   287→   287→    },
+   288→   288→    "agnes": {
+   289→   289→        # Remplacer par l'URL réelle du service Agnes
+   290→   290→        "base_url": "https://api.agnes.ai/v1",
+   291→   291→        "model": "agnes-chat",
+   292→   292→        "test_path": "/models",
+   293→   293→    },
+   294→   294→}
+   295→   295→
+   296→   296→def get_key(provider: str) -> str | None:
+   297→   297→    db = SessionLocal()
+   298→   298→    row = db.query(ApiKey).filter_by(provider=provider).first()
+   299→   299→    db.close()
+   300→   300→    return decrypt(row.encrypted) if row else None
+   301→   301→
+   302→   302→async def verify_key(provider: str, key: str) -> bool:
+   303→   303→    cfg = PROVIDERS[provider]
+   304→   304→    async with httpx.AsyncClient(timeout=15) as c:
+   305→   305→        r = await c.get(cfg["base_url"] + cfg["test_path"],
+   306→   306→                        headers={"Authorization": f"Bearer {key}"})
+   307→   307→    return r.status_code == 200
+   308→   308→
+   309→   309→async def chat(provider: str, messages: list[dict], temperature=0.3) -> str:
+   310→   310→    key = get_key(provider)
+   311→   311→    if not key:
+   312→   312→        raise RuntimeError(f"Clé {provider} non configurée")
+   313→   313→    cfg = PROVIDERS[provider]
+   314→   314→    async with httpx.AsyncClient(timeout=120) as c:
+   315→   315→        r = await c.post(
+   316→   316→            f"{cfg['base_url']}/chat/completions",
+   317→   317→            headers={"Authorization": f"Bearer {key}"},
+   318→   318→            json={"model": cfg["model"], "messages": messages, "temperature": temperature},
+   319→   319→        )
+   320→   320→        r.raise_for_status()
+   321→   321→        return r.json()["choices"][0]["message"]["content"]
+   322→   322→agents.py — orchestration multi-agents
+   323→   323→python
+   324→   324→from vector_store import search
+   325→   325→from llm_router import chat
+   326→   326→
+   327→   327→class Agent:
+   328→   328→    name = "Agent"
+   329→   329→    def __init__(self, provider: str):
+   330→   330→        self.provider = provider
+   331→   331→
+   332→   332→class PlannerAgent(Agent):
+   333→   333→    name = "Planificateur"
+   334→   334→    async def run(self, question: str) -> str:
+   335→   335→        return await chat(self.provider, [
+   336→   336→            {"role": "system", "content": "Tu décomposes une question d'élève en sous-tâches claires. Réponds en 3 puces max."},
+   337→   337→            {"role": "user", "content": question},
+   338→   338→        ])
+   339→   339→
+   340→   340→class RetrieverAgent(Agent):
+   341→   341→    name = "Chercheur"
+   342→   342→    def run(self, question: str, k=6):
+   343→   343→        return search(question, k=k)
+   344→   344→
+   345→   345→class SolverAgent(Agent):
+   346→   346→    name = "Solveur"
+   347→   347→    async def run(self, question: str, context: str, plan: str) -> str:
+   348→   348→        return await chat(self.provider, [
+   349→   349→            {"role": "system", "content":
+   350→   350→             "Tu es un professeur. Réponds en français, étape par étape, en citant les passages du cours fournis entre <cours>...</cours>. "
+   351→   351→             "Si l'info manque, dis-le."},
+   352→   352→            {"role": "user", "content": f"<cours>{context}</cours>\n\nPlan: {plan}\n\nQuestion: {question}"},
+   353→   353→        ])
+   354→   354→
+   355→   355→class TutorAgent(Agent):
+   356→   356→    name = "Tuteur"
+   357→   357→    async def run(self, question: str, answer: str) -> str:
+   358→   358→        return await chat(self.provider, [
+   359→   359→            {"role": "system", "content":
+   360→   360→             "Reformule la réponse pour un élève, propose 2 questions de vérification et un exercice d'application."},
+   361→   361→            {"role": "user", "content": f"Question: {question}\nRéponse brute: {answer}"},
+   362→   362→        ])
+   363→   363→
+   364→   364→async def run_pipeline(question: str, provider: str = "mistral"):
+   365→   365→    events = []
+   366→   366→    plan = await PlannerAgent(provider).run(question)
+   367→   367→    events.append(("plan", plan))
+   368→   368→
+   369→   369→    hits = RetrieverAgent(provider).run(question)
+   370→   370→    context = "\n---\n".join(h["text"] for h in hits) or "(aucun cours pertinent)"
+   371→   371→    events.append(("retrieval", [h["meta"] for h in hits]))
+   372→   372→
+   373→   373→    answer = await SolverAgent(provider).run(question, context, plan)
+   374→   374→    events.append(("answer", answer))
+   375→   375→
+   376→   376→    tuto = await TutorAgent(provider).run(question, answer)
+   377→   377→    events.append(("tutor", tuto))
+   378→   378→    return events
+   379→   379→routes/api_keys.py — insertion + confirmation
+   380→   380→python
+   381→   381→from fastapi import APIRouter, HTTPException
+   382→   382→from pydantic import BaseModel
+   383→   383→from datetime import datetime
+   384→   384→from database import SessionLocal, ApiKey
+   385→   385→from security import encrypt, mask
+   386→   386→from llm_router import verify_key
+   387→   387→
+   388→   388→router = APIRouter(prefix="/api/keys")
+   389→   389→
+   390→   390→class KeyIn(BaseModel):
+   391→   391→    provider: str   # "mistral" | "agnes"
+   392→   392→    key: str
+   393→   393→
+   394→   394→@router.post("/save")
+   395→   395→async def save(payload: KeyIn):
+   396→   396→    if payload.provider not in ("mistral", "agnes"):
+   397→   397→        raise HTTPException(400, "Fournisseur inconnu")
+   398→   398→
+   399→   399→    ok = await verify_key(payload.provider, payload.key)
+   400→   400→    if not ok:
+   401→   401→        raise HTTPException(401, f"Clé {payload.provider} invalide ou non autorisée")
+   402→   402→
+   403→   403→    db = SessionLocal()
+   404→   404→    row = db.query(ApiKey).filter_by(provider=payload.provider).first()
+   405→   405→    if row:
+   406→   406→        row.encrypted = encrypt(payload.key)
+   407→   407→        row.verified_at = datetime.utcnow()
+   408→   408→    else:
+   409→   409→        db.add(ApiKey(provider=payload.provider,
+   410→   410→                      encrypted=encrypt(payload.key),
+   411→   411→                      verified_at=datetime.utcnow()))
+   412→   412→    db.commit(); db.close()
+   413→   413→
+   414→   414→    return {
+   415→   415→        "status": "ok",
+   416→   416→        "provider": payload.provider,
+   417→   417→        "masked": mask(payload.key),
+   418→   418→        "message": f"✅ Clé {payload.provider} vérifiée et enregistrée."
+   419→   419→    }
+   420→   420→
+   421→   421→@router.get("/status")
+   422→   422→def status():
+   423→   423→    db = SessionLocal()
+   424→   424→    rows = db.query(ApiKey).all()
+   425→   425→    db.close()
+   426→   426→    return {r.provider: {"masked": mask("xxxx"), "verified_at": r.verified_at} for r in rows}
+   427→   427→routes/documents.py
+   428→   428→python
+   429→   429→from fastapi import APIRouter, UploadFile, File, Form
+   430→   430→from pathlib import Path
+   431→   431→import shutil, uuid
+   432→   432→from config import UPLOAD_DIR
+   433→   433→from database import SessionLocal, Document
+   434→   434→from ingestion import extract_text, chunk
+   435→   435→from vector_store import index_chunks
+   436→   436→
+   437→   437→router = APIRouter(prefix="/api/documents")
+   438→   438→ALLOWED = {".pdf", ".docx", ".txt", ".png", ".jpg", ".jpeg"}
+   439→   439→
+   440→   440→@router.post("/upload")
+   441→   441→async def upload(file: UploadFile = File(...), title: str = Form(...), subject: str = Form("général")):
+   442→   442→    ext = Path(file.filename).suffix.lower()
+   443→   443→    if ext not in ALLOWED:
+   444→   444→        return {"error": f"Format {ext} non supporté"}
+   445→   445→    dest = UPLOAD_DIR / f"{uuid.uuid4().hex}{ext}"
+   446→   446→    with dest.open("wb") as f:
+   447→   447→        shutil.copyfileobj(file.file, f)
+   448→   448→
+   449→   449→    text = extract_text(dest)
+   450→   450→    chunks = chunk(text)
+   451→   451→
+   452→   452→    db = SessionLocal()
+   453→   453→    doc = Document(title=title, subject=subject, kind=ext[1:], path=str(dest), text=text[:200_000])
+   454→   454→    db.add(doc); db.commit(); db.refresh(doc)
+   455→   455→    index_chunks(doc.id, title, chunks)
+   456→   456→    db.close()
+   457→   457→
+   458→   458→    return {"id": doc.id, "title": title, "chunks": len(chunks),
+   459→   459→            "message": f"📚 '{title}' importé ({len(chunks)} segments indexés)."}
+   460→   460→routes/chat.py
+   461→   461→python
+   462→   462→from fastapi import APIRouter
+   463→   463→from pydantic import BaseModel
+   464→   464→from agents import run_pipeline
+   465→   465→
+   466→   466→router = APIRouter(prefix="/api/chat")
+   467→   467→
+   468→   468→class Ask(BaseModel):
+   469→   469→    question: str
+   470→   470→    provider: str = "mistral"
+   471→   471→
+   472→   472→@router.post("/ask")
+   473→   473→async def ask(payload: Ask):
+   474→   474→    events = await run_pipeline(payload.question, payload.provider)
+   475→   475→    return {"events": [{"type": t, "content": c} for t, c in events]}
+   476→   476→main.py
+   477→   477→python
+   478→   478→from fastapi import FastAPI
+   479→   479→from fastapi.middleware.cors import CORSMiddleware
+   480→   480→from routes import documents, api_keys, chat
+   481→   481→
+   482→   482→app = FastAPI(title="Aide au Devoir")
+   483→   483→app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+   484→   484→
+   485→   485→app.include_router(documents.router)
+   486→   486→app.include_router(api_keys.router)
+   487→   487→app.include_router(chat.router)
+   488→   488→
+   489→   489→@app.get("/")
+   490→   490→def root(): return {"status": "ok"}
+   491→   491→5. Le pipeline d'agents expliqué
+   492→   492→Les agents « disent quand ils sont prêts » grâce à un état observable (SSE ou WebSocket). Exemple côté frontend :
+   493→   493→
+   494→   494→text
+   495→   495→[Planificateur] ⏳ ... ✅ prêt
+   496→   496→[Chercheur]     ⏳ 12 chunks trouvés ... ✅ prêt
+   497→   497→[Solveur]       ⏳ génération ... ✅ prêt
+   498→   498→[Tuteur]        ⏳ ... ✅ prêt
+   499→   499→→ Réponse finale affichée
+   500→   500→Tu peux exposer run_pipeline en Server-Sent Events :
+   501→   501→
+   502→   502→python
+   503→   503→from fastapi.responses import StreamingResponse
+   504→   504→import json
+   505→   505→
+   506→   506→@router.post("/ask/stream")
+   507→   507→async def ask_stream(payload: Ask):
+   508→   508→    async def gen():
+   509→   509→        # adapte run_pipeline pour yield après chaque étape
+   510→   510→        for step, content in await run_pipeline(payload.question, payload.provider):
+   511→   511→            yield f"data: {json.dumps({'step': step, 'content': content}, ensure_ascii=False)}\n\n"
+   512→   512→    return StreamingResponse(gen(), media_type="text/event-stream")
+   513→   513→6. Frontend — 3 écrans clés
+   514→   514→a) settings/page.tsx — clés API
+   515→   515→tsx
+   516→   516→"use client";
+   517→   517→import { useState } from "react";
+   518→   518→
+   519→   519→export default function Settings() {
+   520→   520→  const [provider, setProvider] = useState("mistral");
+   521→   521→  const [key, setKey] = useState("");
+   522→   522→  const [status, setStatus] = useState<any>(null);
+   523→   523→
+   524→   524→  async function save() {
+   525→   525→    const r = await fetch("http://localhost:8000/api/keys/save", {
+   526→   526→      method: "POST",
+   527→   527→      headers: { "Content-Type": "application/json" },
+   528→   528→      body: JSON.stringify({ provider, key }),
+   529→   529→    });
+   530→   530→    setStatus(await r.json());
+   531→   531→  }
+   532→   532→
+   533→   533→  return (
+   534→   534→    <div className="p-8 max-w-lg mx-auto space-y-4">
+   535→   535→      <h1 className="text-2xl font-bold">🔑 Clés API</h1>
+   536→   536→      <select value={provider} onChange={e => setProvider(e.target.value)}
+   537→   537→              className="border p-2 rounded w-full">
+   538→   538→        <option value="mistral">Mistral</option>
+   539→   539→        <option value="agnes">Agnes</option>
+   540→   540→      </select>
+   541→   541→      <input type="password" value={key} onChange={e => setKey(e.target.value)}
+   542→   542→             placeholder="sk-..." className="border p-2 rounded w-full" />
+   543→   543→      <button onClick={save} className="bg-blue-600 text-white px-4 py-2 rounded">
+   544→   544→        Vérifier & enregistrer
+   545→   545→      </button>
+   546→   546→      {status && (
+   547→   547→        <div className={status.status === "ok" ? "text-green-600" : "text-red-600"}>
+   548→   548→          {status.message || status.detail}
+   549→   549→        </div>
+   550→   550→      )}
+   551→   551→    </div>
+   552→   552→  );
+   553→   553→}
+   554→   554→b) upload/page.tsx
+   555→   555→tsx
+   556→   556→"use client";
+   557→   557→import { useState } from "react";
+   558→   558→
+   559→   559→export default function Upload() {
+   560→   560→  const [title, setTitle] = useState("");
+   561→   561→  const [subject, setSubject] = useState("général");
+   562→   562→  const [file, setFile] = useState<File | null>(null);
+   563→   563→  const [msg, setMsg] = useState("");
+   564→   564→
+   565→   565→  async function send() {
+   566→   566→    if (!file || !title) return setMsg("Titre et fichier requis");
+   567→   567→    const fd = new FormData();
+   568→   568→    fd.append("file", file);
+   569→   569→    fd.append("title", title);
+   570→   570→    fd.append("subject", subject);
+   571→   571→    const r = await fetch("http://localhost:8000/api/documents/upload", { method: "POST", body: fd });
+   572→   572→    const j = await r.json();
+   573→   573→    setMsg(j.message || JSON.stringify(j));
+   574→   574→  }
+   575→   575→
+   576→   576→  return (
+   577→   577→    <div className="p-8 max-w-lg mx-auto space-y-3">
+   578→   578→      <h1 className="text-2xl font-bold">📚 Importer un cours</h1>
+   579→   579→      <input placeholder="Titre (ex: Maths – Chapitre 3)" value={title}
+   580→   580→             onChange={e => setTitle(e.target.value)} className="border p-2 rounded w-full" />
+   581→   581→      <input placeholder="Matière" value={subject}
+   582→   582→             onChange={e => setSubject(e.target.value)} className="border p-2 rounded w-full" />
+   583→   583→      <input type="file" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg"
+   584→   584→             onChange={e => setFile(e.target.files?.[0] || null)} />
+   585→   585→      <button onClick={send} className="bg-emerald-600 text-white px-4 py-2 rounded">Importer</button>
+   586→   586→      {msg && <p>{msg}</p>}
+   587→   587→    </div>
+   588→   588→  );
+   589→   589→}
+   590→   590→c) chat/page.tsx (avec indicateurs d'agents)
+   591→   591→tsx
+   592→   592→"use client";
+   593→   593→import { useState } from "react";
+   594→   594→
+   595→   595→const STEPS = ["plan", "retrieval", "answer", "tutor"];
+   596→   596→const LABELS: any = { plan: "🧭 Planificateur", retrieval: "🔍 Chercheur",
+   597→   597→                      answer: "✍️ Solveur", tutor: "👨‍🏫 Tuteur" };
+   598→   598→
+   599→   599→export default function Chat() {
+   600→   600→  const [q, setQ] = useState("");
+   601→   601→  const [provider, setProvider] = useState("mistral");
+   602→   602→  const [events, setEvents] = useState<any[]>([]);
+   603→   603→  const [busy, setBusy] = useState(false);
+   604→   604→
+   605→   605→  async function ask() {
+   606→   606→    setBusy(true); setEvents([]);
+   607→   607→    const r = await fetch("http://localhost:8000/api/chat/ask", {
+   608→   608→      method: "POST",
+   609→   609→      headers: { "Content-Type": "application/json" },
+   610→   610→      body: JSON.stringify({ question: q, provider }),
+   611→   611→    });
+   612→   612→    const j = await r.json();
+   613→   613→    setEvents(j.events); setBusy(false);
+   614→   614→  }
+   615→   615→
+   616→   616→  return (
+   617→   617→    <div className="p-8 max-w-3xl mx-auto space-y-4">
+   618→   618→      <h1 className="text-2xl font-bold">💬 Poser une question</h1>
+   619→   619→      <div className="flex gap-2">
+   620→   620→        <input value={q} onChange={e => setQ(e.target.value)}
+   621→   621→               className="border p-2 rounded flex-1"
+   622→   622→               placeholder="Ex : Explique la dérivée d'une fonction composée" />
+   623→   623→        <select value={provider} onChange={e => setProvider(e.target.value)}
+   624→   624→                className="border p-2 rounded">
+   625→   625→          <option value="mistral">Mistral</option>
+   626→   626→          <option value="agnes">Agnes</option>
+   627→   627→        </select>
+   628→   628→        <button onClick={ask} disabled={busy}
+   629→   629→                className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50">
+   630→   630→          {busy ? "..." : "Envoyer"}
+   631→   631→        </button>
+   632→   632→      </div>
+   633→   633→      <div className="space-y-3">
+   634→   634→        {events.map((e, i) => (
+   635→   635→          <div key={i} className="border-l-4 border-blue-500 pl-3">
+   636→   636→            <div className="text-xs text-gray-500">{LABELS[e.type] || e.type} ✅ prêt</div>
+   637→   637→            <pre className="whitespace-pre-wrap text-sm">
+   638→   638→              {typeof e.content === "string" ? e.content : JSON.stringify(e.content, null, 2)}
+   639→   639→            </pre>
+   640→   640→          </div>
+   641→   641→        ))}
+   642→   642→      </div>
+   643→   643→    </div>
+   644→   644→  );
+   645→   645→}
+   646→   646→7. Flux utilisateur complet (comme tu le décris)
+   647→   647→Import → l'utilisateur glisse ses PDF/images/DOCX avec un titre → backend extrait texte + OCR → chunks indexés dans ChromaDB.
+   648→   648→
+   649→   649→Agents → l'UI affiche l'état : "Planificateur prêt ✅ / Chercheur : 6 passages trouvés ✅ / Solveur prêt ✅ / Tuteur prêt ✅".
+   650→   650→
+   651→   651→Clés API → l'utilisateur colle sa clé Mistral (et/ou Agnes) → POST /api/keys/save → vérification en direct auprès du provider → confirmation « ✅ Clé vérifiée et enregistrée (sk-…4f2a) ».
+   652→   652→
+   653→   653→Questions → tirées des cours (RAG), de l'actualité (ajoute un WebSearchAgent via Tavily/Brave), ou de livres importés → même pipeline.
+   654→   654→
+   655→   655→Réponses → étapes numérotées, citations des passages du cours, questions de vérification.
+   656→   656→
+   657→   657→8. Pour aller plus loin
+   658→   658→SSE/WebSocket pour voir chaque agent s'activer en temps réel (pas d'attente globale).
+   659→   659→
+   660→   660→WebSearchAgent (Tavily API) pour « questions d'actualité ».
+   661→   661→
+   662→   662→Multi-utilisateurs : ajoute user_id sur Document/ApiKey + JWT.
+   663→   663→
+   664→   664→Multi-agents parallèles (asyncio.gather) pour diviser une longue question en sous-questions.
+   665→   665→
+   666→   666→Import en masse : dossier drag-and-drop → boucle sur /api/documents/upload.
+   667→   667→
+   668→   668→Export PDF de la réponse finale pour l'élève.
+   669→   669→
+   670→   670→9. Lancer
+   671→   671→bash
+   672→   672→# backend
+   673→   673→cd backend
+   674→   674→python -m venv .venv && source .venv/bin/activate
+   675→   675→pip install -r requirements.txt
+   676→   676→sudo apt install tesseract-ocr tesseract-ocr-fra   # pour OCR
+   677→   677→export MASTER_KEY="$(openssl rand -base64 32)"
+   678→   678→uvicorn main:app --reload --port 8000
+   679→   679→
+   680→   680→# frontend
+   681→   681→cd frontend
+   682→   682→npm install
+   683→   683→npm run dev      # http://localhost:3000
+   684→   684→Veux-tu que je te fournisse :
+   685→   685→
+   686→   686→A) une version SSE temps réel avec affichage agent par agent qui s'allume,
+   687→   687→
+   688→   688→B) l'ajout du WebSearchAgent (actualité) via Tavily,
+   689→   689→
+   690→   690→C) la doc exacte de l'API Agnes (donne-moi l'URL) pour brancher proprement le PROVIDERS["agnes"],
+   691→   691→
+   692→   692→D) le passage en Next.js + shadcn/ui complet ?
+   693→   693→
+   694→   694→Dis-moi lequel on attaque et je code la suite.
+   695→   695→
+   696→   696→A, C et D. Pour le B, on le mettra ulterieurement le temps de creer la clé API
+   697→   697→The user wants A (SSE real-time), C (Agnes API integration - but I need the URL, let me ask or provide a flexible adapter), and D (Next.js + shadcn/ui complete).
+   698→   698→
+   699→   699→Let me deliver all three. For C, since I don't have the exact Agnes API docs, I'll build a flexible adapter that can be configured via env vars or settings, and ask the user to provide the URL.
+   700→   700→
+   701→   701→Let me structure this properly:
+   702→   702→
+   703→   703→A) SSE temps réel - Backend streaming + frontend EventSource
+   704→   704→
+   705→   705→C) Adaptateur Agnes flexible - configurable provider with OpenAI-compatible interface
+   706→   706→
+   707→   707→D) Next.js + shadcn/ui complet
+   708→   708→
+   709→   709→Let me write comprehensive code.
+   710→   710→
+   711→   711→For D, I'll build a proper Next.js 14 App Router project with shadcn/ui. I'll include the key components and pages.
+   712→   712→
+   713→   713→Let me be organized and produce quality code.
+   714→   714→
+   715→   715→Structure:
+   716→   716→
+   717→   717→text
+   718→   718→aide-devoir/
+   719→   719→├── backend/
+   720→   720→│   ├── main.py
+   721→   721→│   ├── config.py
+   722→   722→│   ├── security.py
+   723→   723→│   ├── database.py
+   724→   724→│   ├── ingestion.py
+   725→   725→│   ├── vector_store.py
+   726→   726→│   ├── providers/
+   727→   727→│   │   ├── __init__.py
+   728→   728→│   │   ├── base.py
+   729→   729→│   │   ├── mistral.py
+   730→   730→│   │   ├── agnes.py
+   731→   731→│   │   └── registry.py
+   732→   732→│   ├── llm_router.py
+   733→   733→│   ├── agents.py
+   734→   734→│   ├── events.py              # SSE bus
+   735→   735→│   └── routes/
+   736→   736→│       ├── documents.py
+   737→   737→│       ├── api_keys.py
+   738→   738→│       └── chat.py
+   739→   739→└── frontend/
+   740→   740→    ├── app/
+   741→   741→    │   ├── layout.tsx
+   742→   742→    │   ├── page.tsx
+   743→   743→    │   ├── documents/page.tsx
+   744→   744→    │   ├── settings/page.tsx
+   745→   745→    │   └── chat/page.tsx
+   746→   746→    ├── components/
+   747→   747→    │   ├── ui/                # shadcn
+   748→   748→    │   ├── agent-timeline.tsx
+   749→   749→    │   ├── file-upload.tsx
+   750→   750→    │   ├── api-key-form.tsx
+   751→   751→    │   └── chat-stream.tsx
+   752→   752→    ├── lib/
+   753→   753→    │   ├── api.ts
+   754→   754→    │   ├── sse.ts
+   755→   755→    │   └── utils.ts
+   756→   756→    ├── tailwind.config.ts
+   757→   757→    └── package.json
+   758→   758→Let me write it.
+   759→   759→
+   760→   760→For SSE, I'll use an async generator approach with a queue that agents push to.
+   761→   761→
+   762→   762→Let me write the streaming pipeline properly.
+   763→   763→
+   764→   764→python
+   765→   765→# events.py
+   766→   766→import asyncio, json
+   767→   767→from typing import AsyncIterator
+   768→   768→
+   769→   769→class EventBus:
+   770→   770→    def __init__(self):
+   771→   771→        self.queue: asyncio.Queue = asyncio.Queue()
+   772→   772→    
+   773→   773→    async def emit(self, type_: str, data: dict):
+   774→   774→        await self.queue.put({"type": type_, "data": data})
+   775→   775→    
+   776→   776→    async def stream(self) -> AsyncIterator[dict]:
+   777→   777→        while True:
+   778→   778→            ev = await self.queue.get()
+   779→   779→            if ev["type"] == "__end__":
+   780→   780→                break
+   781→   781→            yield ev
+   782→   782→    
+   783→   783→    async def end(self):
+   784→   784→        await self.queue.put({"type": "__end__", "data": {}})
+   785→   785→Then in the pipeline:
+   786→   786→
+   787→   787→python
+   788→   788→async def run_pipeline_stream(question: str, provider: str) -> AsyncIterator[dict]:
+   789→   789→    bus = EventBus()
+   790→   790→    
+   791→   791→    async def worker():
+   792→   792→        try:
+   793→   793→            await bus.emit("agent.start", {"agent": "planner", "label": "Planificateur"})
+   794→   794→            plan = await PlannerAgent(provider).run(question)
+   795→   795→            await bus.emit("agent.done", {"agent": "planner", "content": plan})
+   796→   796→            
+   797→   797→            await bus.emit("agent.start", {"agent": "retriever", "label": "Chercheur"})
+   798→   798→            hits = RetrieverAgent(provider).run(question)
+   799→   799→            await bus.emit("agent.done", {"agent": "retriever", "content": [...]})
+   800→   800→            
+   801→   801→            # ...
+   802→   802→        finally:
+   803→   803→            await bus.end()
+   804→   804→    
+   805→   805→    asyncio.create_task(worker())
+   806→   806→    async for ev in bus.stream():
+   807→   807→        yield ev
+   808→   808→Then FastAPI endpoint returns StreamingResponse with format event: {type}\ndata: {json}\n\n.
+   809→   809→
+   810→   810→For Agnes, since I don't know the exact API, I'll build a flexible OpenAI-compatible adapter and note that the user should provide the base_url, model, and test path. I'll add a "custom" provider option that's easy to configure.
+   811→   811→
+   812→   812→Actually, let me build a provider registry pattern:
+   813→   813→
+   814→   814→python
+   815→   815→# providers/base.py
+   816→   816→from abc import ABC, abstractmethod
+   817→   817→
+   818→   818→class LLMProvider(ABC):
+   819→   819→    name: str
+   820→   820→    @abstractmethod
+   821→   821→    async def verify(self, key: str) -> tuple[bool, str]: ...
+   822→   822→    @abstractmethod
+   823→   823→    async def chat(self, key: str, messages: list[dict], **kwargs) -> str: ...
+   824→   824→    @abstractmethod
+   825→   825→    async def embed(self, key: str, texts: list[str]) -> list[list[float]]: ...
+   826→   826→Then Mistral and Agnes implement it.
+   827→   827→
+   828→   828→Since Agnes API details are unknown, I'll:
+   829→   829→
+   830→   830→Build the adapter with env-var config (AGNES_BASE_URL, AGNES_MODEL, AGNES_TEST_PATH)
+   831→   831→
+   832→   832→Give the user a template and instructions to fill in once they have the docs
+   833→   833→
+   834→   834→Include commented examples of the most common patterns (OpenAI-compatible, Anthropic-compatible)
+   835→   835→
+   836→   836→OK let me write everything out. I'll be thorough but not overly verbose.
+   837→   837→
+   838→   838→For the frontend, I'll:
+   839→   839→
+   840→   840→Show the key shadcn components needed
+   841→   841→
+   842→   842→Build the pages properly
+   843→   843→
+   844→   844→Use EventSource with fetch (since EventSource doesn't support POST)
+   845→   845→
+   846→   846→Actually, EventSource only supports GET. For POST I need to use fetch with ReadableStream parsing. Let me write a helper for that.
+   847→   847→
+   848→   848→typescript
+   849→   849→// lib/sse.ts
+   850→   850→export async function sseStream(url: string, body: any, onEvent: (type: string, data: any) => void, onEnd: () => void) {
+   851→   851→  const res = await fetch(url, {
+   852→   852→    method: "POST",
+   853→   853→    headers: { "Content-Type": "application/json" },
+   854→   854→    body: JSON.stringify(body),
+   855→   855→  });
+   856→   856→  const reader = res.body!.getReader();
+   857→   857→  const decoder = new TextDecoder();
+   858→   858→  let buffer = "";
+   859→   859→  
+   860→   860→  while (true) {
+   861→   861→    const { value, done } = await reader.read();
+   862→   862→    if (done) break;
+   863→   863→    buffer += decoder.decode(value, { stream: true });
+   864→   864→    
+   865→   865→    let idx;
+   866→   866→    while ((idx = buffer.indexOf("\n\n")) !== -1) {
+   867→   867→      const chunk = buffer.slice(0, idx);
+   868→   868→      buffer = buffer.slice(idx + 2);
+   869→   869→      
+   870→   870→      let eventType = "message";
+   871→   871→      let dataLines: string[] = [];
+   872→   872→      for (const line of chunk.split("\n")) {
+   873→   873→        if (line.startsWith("event:")) eventType = line.slice(6).trim();
+   874→   874→        else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+   875→   875→      }
+   876→   876→      if (dataLines.length) {
+   877→   877→        onEvent(eventType, JSON.parse(dataLines.join("\n")));
+   878→   878→      }
+   879→   879→    }
+   880→   880→  }
+   881→   881→  onEnd();
+   882→   882→}
+   883→   883→OK, let me write the whole thing. I'll keep it focused and readable.
+   884→   884→
+   885→   885→Let me also add the shadcn components I'm using - Button, Card, Input, Select, Textarea, Badge, Progress, Tabs, etc. I'll show the command to install them.
+   886→   886→
+   887→   887→Let me write the final response now. I'll structure as:
+   888→   888→
+   889→   889→Overview of changes
+   890→   890→
+   891→   891→Backend updates (providers, SSE)
+   892→   892→
+   893→   893→Frontend full setup (Next.js + shadcn)
+   894→   894→
+   895→   895→Instructions to run
+   896→   896→
+   897→   897→Question about Agnes URL
+   898→   898→
+   899→   899→Let me get into the code.
+   900→   900→
+   901→   901→🚀 A + C + D — Streaming SSE, Adaptateur Agnes, Frontend Next.js + shadcn/ui
+   902→   902→On garde l'architecture précédente, on refait proprement les 3 blocs demandés.
+   903→   903→
+   904→   904→📁 Nouvelle structure
+   905→   905→text
+   906→   906→aide-devoir/
+   907→   907→├── backend/
+   908→   908→│   ├── main.py
+   909→   909→│   ├── config.py
+   910→   910→│   ├── security.py
+   911→   911→│   ├── database.py
+   912→   912→│   ├── ingestion.py                 (inchangé)
+   913→   913→│   ├── vector_store.py              (inchangé)
+   914→   914→│   ├── events.py                    ← NOUVEAU : bus SSE
+   915→   915→│   ├── agents.py                    ← REFONTE : version streaming
+   916→   916→│   ├── llm_router.py                ← REFONTE : utilise providers/
+   917→   917→│   ├── providers/                   ← NOUVEAU
+   918→   918→│   │   ├── __init__.py
+   919→   919→│   │   ├── base.py
+   920→   920→│   │   ├── mistral.py
+   921→   921→│   │   ├── agnes.py
+   922→   922→│   │   └── registry.py
+   923→   923→│   └── routes/
+   924→   924→│       ├── documents.py
+   925→   925→│       ├── api_keys.py
+   926→   926→│       └── chat.py                  ← SSE
+   927→   927→└── frontend/                        ← NEXT.JS + SHADCN COMPLET
+   928→   928→    ├── package.json
+   929→   929→    ├── next.config.mjs
+   930→   930→    ├── tailwind.config.ts
+   931→   931→    ├── tsconfig.json
+   932→   932→    ├── app/
+   933→   933→    │   ├── layout.tsx
+   934→   934→    │   ├── globals.css
+   935→   935→    │   ├── page.tsx                 (dashboard)
+   936→   936→    │   ├── documents/page.tsx
+   937→   937→    │   ├── chat/page.tsx
+   938→   938→    │   └── settings/page.tsx
+   939→   939→    ├── components/
+   940→   940→    │   ├── ui/                      (shadcn)
+   941→   941→    │   ├── nav-bar.tsx
+   942→   942→    │   ├── agent-timeline.tsx
+   943→   943→    │   ├── file-upload.tsx
+   944→   944→    │   ├── api-key-form.tsx
+   945→   945→    │   └── chat-stream.tsx
+   946→   946→    └── lib/
+   947→   947→        ├── api.ts
+   948→   948→        ├── sse.ts
+   949→   949→        └── utils.ts
+   950→   950→🅐 — Streaming SSE (agent par agent)
+   951→   951→backend/events.py
+   952→   952→python
+   953→   953→import asyncio
+   954→   954→from typing import AsyncIterator, Callable, Any
+   955→   955→
+   956→   956→class EventBus:
+   957→   957→    """Bus d'événements asyncio pour pousser des messages SSE depuis les agents."""
+   958→   958→    def __init__(self):
+   959→   959→        self._queue: asyncio.Queue[dict] = asyncio.Queue()
+   960→   960→        self._closed = False
+   961→   961→
+   962→   962→    async def emit(self, event: str, data: dict):
+   963→   963→        if self._closed:
+   964→   964→            return
+   965→   965→        await self._queue.put({"event": event, "data": data})
+   966→   966→
+   967→   967→    async def close(self):
+   968→   968→        if self._closed:
+   969→   969→            return
+   970→   970→        self._closed = True
+   971→   971→        await self._queue.put({"event": "__end__", "data": {}})
+   972→   972→
+   973→   973→    async def stream(self) -> AsyncIterator[dict]:
+   974→   974→        while True:
+   975→   975→            ev = await self._queue.get()
+   976→   976→            if ev["event"] == "__end__":
+   977→   977→                break
+   978→   978→            yield ev
+   979→   979→
+   980→   980→    @staticmethod
+   981→   981→    def format_sse(event: str, data: dict) -> str:
+   982→   982→        import json
+   983→   983→        return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+   984→   984→backend/agents.py (version streaming)
+   985→   985→python
+   986→   986→import asyncio
+   987→   987→from typing import AsyncIterator
+   988→   988→from vector_store import search
+   989→   989→from llm_router import chat
+   990→   990→from events import EventBus
+   991→   991→
+   992→   992→
+   993→   993→class BaseAgent:
+   994→   994→    id: str = "agent"
+   995→   995→    label: str = "Agent"
+   996→   996→
+   997→   997→    def __init__(self, provider: str, bus: EventBus):
+   998→   998→        self.provider = provider
+   999→   999→        self.bus = bus
+  1000→  1000→
+  1001→  1001→    async def _start(self, **extra):
+  1002→  1002→        await self.bus.emit("agent.start", {"id": self.id, "label": self.label, **extra})
+  1003→  1003→
+  1004→  1004→    async def _done(self, summary: str, **payload):
+  1005→  1005→        await self.bus.emit("agent.done", {"id": self.id, "label": self.label,
+  1006→  1006→                                           "summary": summary, **payload})
+  1007→  1007→
+  1008→  1008→    async def _log(self, message: str):
+  1009→  1009→        await self.bus.emit("agent.log", {"id": self.id, "message": message})
+  1010→  1010→
+  1011→  1011→
+  1012→  1012→class PlannerAgent(BaseAgent):
+  1013→  1013→    id, label = "planner", "🧭 Planificateur"
+  1014→  1014→
+  1015→  1015→    async def run(self, question: str) -> str:
+  1016→  1016→        await self._start()
+  1017→  1017→        await self._log("Décomposition de la question…")
+  1018→  1018→        plan = await chat(self.provider, [
+  1019→  1019→            {"role": "system", "content":
+  1020→  1020→             "Tu es un planificateur pédagogique. Décompose la question en 3 sous-tâches "
+  1021→  1021→             "maximum, en français, sous forme de puces très courtes."},
+  1022→  1022→            {"role": "user", "content": question},
+  1023→  1023→        ], temperature=0.2)
+  1024→  1024→        await self._done("Plan établi", plan=plan)
+  1025→  1025→        return plan
+  1026→  1026→
+  1027→  1027→
+  1028→  1028→class RetrieverAgent(BaseAgent):
+  1029→  1029→    id, label = "retriever", "🔍 Chercheur"
+  1030→  1030→
+  1031→  1031→    async def run(self, question: str, k: int = 6):
+  1032→  1032→        await self._start()
+  1033→  1033→        await self._log(f"Recherche dans les cours (top {k})…")
+  1034→  1034→        hits = search(question, k=k)
+  1035→  1035→        if not hits:
+  1036→  1036→            await self._log("Aucun passage pertinent trouvé dans les cours indexés.")
+  1037→  1037→        else:
+  1038→  1038→            await self._log(f"{len(hits)} passages retenus.")
+  1039→  1039→        # Stream les passages un par un
+  1040→  1040→        for i, h in enumerate(hits):
+  1041→  1041→            await self.bus.emit("retrieval.hit", {
+  1042→  1042→                "index": i,
+  1043→  1043→                "title": h["meta"].get("title"),
+  1044→  1044→                "score": round(h["score"], 3),
+  1045→  1045→                "preview": h["text"][:180] + ("…" if len(h["text"]) > 180 else ""),
+  1046→  1046→            })
+  1047→  1047→        await self._done(f"{len(hits)} passages", hits=[h["meta"] for h in hits])
+  1048→  1048→        return hits
+  1049→  1049→
+  1050→  1050→
+  1051→  1051→class SolverAgent(BaseAgent):
+  1052→  1052→    id, label = "solver", "✍️ Solveur"
+  1053→  1053→
+  1054→  1054→    async def run(self, question: str, context: str, plan: str) -> str:
+  1055→  1055→        await self._start()
+  1056→  1056→        await self._log("Rédaction de la réponse étape par étape…")
+  1057→  1057→        # Token par token si le provider le supporte ; sinon réponse d'un bloc
+  1058→  1058→        answer = await chat(self.provider, [
+  1059→  1059→            {"role": "system", "content":
+  1060→  1060→             "Tu es un professeur particulier. Réponds en français, étape par étape. "
+  1061→  1061→             "Cite les passages du cours entre <cite>...</cite>. Si une info manque, dis-le."},
+  1062→  1062→            {"role": "user", "content":
+  1063→  1063→             f"<cours>\n{context}\n</cours>\n\nPlan:\n{plan}\n\nQuestion: {question}"},
+  1064→  1064→        ], temperature=0.3, stream_cb=self._stream_token)
+  1065→  1065→        await self._done("Réponse rédigée", answer=answer)
+  1066→  1066→        return answer
+  1067→  1067→
+  1068→  1068→    async def _stream_token(self, token: str):
+  1069→  1069→        await self.bus.emit("answer.token", {"token": token})
+  1070→  1070→
+  1071→  1071→
+  1072→  1072→class TutorAgent(BaseAgent):
+  1073→  1073→    id, label = "tutor", "👨‍🏫 Tuteur"
+  1074→  1074→
+  1075→  1075→    async def run(self, question: str, answer: str) -> str:
+  1076→  1076→        await self._start()
+  1077→  1077→        await self._log("Préparation des questions de vérification…")
+  1078→  1078→        tuto = await chat(self.provider, [
+  1079→  1079→            {"role": "system", "content":
+  1080→  1080→             "Reformule la réponse pour un élève de lycée. Ajoute 2 questions de vérification "
+  1081→  1081→             "et 1 exercice d'application. Format Markdown."},
+  1082→  1082→            {"role": "user", "content": f"Question: {question}\n\nRéponse brute:\n{answer}"},
+  1083→  1083→        ], temperature=0.4)
+  1084→  1084→        await self._done("Fiche élève prête", tutor=tuto)
+  1085→  1085→        return tuto
+  1086→  1086→
+  1087→  1087→
+  1088→  1088→async def run_pipeline_stream(question: str, provider: str) -> AsyncIterator[dict]:
+  1089→  1089→    """Pipeline complet avec streaming d'événements SSE."""
+  1090→  1090→    bus = EventBus()
+  1091→  1091→
+  1092→  1092→    async def worker():
+  1093→  1093→        try:
+  1094→  1094→            await bus.emit("pipeline.start", {"question": question, "provider": provider})
+  1095→  1095→
+  1096→  1096→            plan = await PlannerAgent(provider, bus).run(question)
+  1097→  1097→
+  1098→  1098→            hits = await RetrieverAgent(provider, bus).run(question)
+  1099→  1099→            context = "\n---\n".join(h["text"] for h in hits) or "(aucun cours pertinent)"
+  1100→  1100→
+  1101→  1101→            answer = await SolverAgent(provider, bus).run(question, context, plan)
+  1102→  1102→
+  1103→  1103→            await TutorAgent(provider, bus).run(question, answer)
+  1104→  1104→
+  1105→  1105→            await bus.emit("pipeline.done", {"answer": answer})
+  1106→  1106→        except Exception as e:
+  1107→  1107→            await bus.emit("pipeline.error", {"message": str(e)})
+  1108→  1108→        finally:
+  1109→  1109→            await bus.close()
+  1110→  1110→
+  1111→  1111→    task = asyncio.create_task(worker())
+  1112→  1112→    async for ev in bus.stream():
+  1113→  1113→        yield ev
+  1114→  1114→    await task
+  1115→  1115→backend/routes/chat.py
+  1116→  1116→python
+  1117→  1117→from fastapi import APIRouter
+  1118→  1118→from fastapi.responses import StreamingResponse
+  1119→  1119→from pydantic import BaseModel
+  1120→  1120→from agents import run_pipeline_stream
+  1121→  1121→from events import EventBus
+  1122→  1122→
+  1123→  1123→router = APIRouter(prefix="/api/chat")
+  1124→  1124→
+  1125→  1125→
+  1126→  1126→class Ask(BaseModel):
+  1127→  1127→    question: str
+  1128→  1128→    provider: str = "mistral"
+  1129→  1129→
+  1130→  1130→
+  1131→  1131→@router.post("/ask/stream")
+  1132→  1132→async def ask_stream(payload: Ask):
+  1133→  1133→    async def gen():
+  1134→  1134→        # Petit keep-alive pour éviter que les proxies coupent
+  1135→  1135→        yield ": ping\n\n"
+  1136→  1136→        async for ev in run_pipeline_stream(payload.question, payload.provider):
+  1137→  1137→            yield EventBus.format_sse(ev["event"], ev["data"])
+  1138→  1138→
+  1139→  1139→    return StreamingResponse(
+  1140→  1140→        gen(),
+  1141→  1141→        media_type="text/event-stream",
+  1142→  1142→        headers={
+  1143→  1143→            "Cache-Control": "no-cache, no-transform",
+  1144→  1144→            "X-Accel-Buffering": "no",   # désactive le buffering nginx
+  1145→  1145→            "Connection": "keep-alive",
+  1146→  1146→        },
+  1147→  1147→    )
+  1148→  1148→🅒 — Adaptateur providers (Mistral + Agnes générique)
+  1149→  1149→⚠️ Je ne connais pas encore la doc exacte de l'API Agnes. Je t'ai donc préparé un adaptateur générique configurable par variables d'environnement. Dès que tu me donnes l'URL + un exemple de curl, on remplit 4 lignes et c'est bouclé.
+  1150→  1150→
+  1151→  1151→backend/providers/base.py
+  1152→  1152→python
+  1153→  1153→from abc import ABC, abstractmethod
+  1154→  1154→from typing import Callable, Awaitable
+  1155→  1155→
+  1156→  1156→
+  1157→  1157→class LLMProvider(ABC):
+  1158→  1158→    name: str
+  1159→  1159→
+  1160→  1160→    @abstractmethod
+  1161→  1161→    async def verify(self, key: str) -> tuple[bool, str]:
+  1162→  1162→        """Retourne (ok, message_utilisateur)."""
+  1163→  1163→
+  1164→  1164→    @abstractmethod
+  1165→  1165→    async def chat(
+  1166→  1166→        self,
+  1167→  1167→        key: str,
+  1168→  1168→        messages: list[dict],
+  1169→  1169→        *,
+  1170→  1170→        temperature: float = 0.3,
+  1171→  1171→        stream_cb: Callable[[str], Awaitable[None]] | None = None,
+  1172→  1172→    ) -> str: ...
+  1173→  1173→
+  1174→  1174→    async def embed(self, key: str, texts: list[str]) -> list[list[float]]:
+  1175→  1175→        """Optionnel : par défaut, on utilise le modèle local."""
+  1176→  1176→        raise NotImplementedError
+  1177→  1177→backend/providers/mistral.py
+  1178→  1178→python
+  1179→  1179→import json
+  1180→  1180→import httpx
+  1181→  1181→from .base import LLMProvider
+  1182→  1182→
+  1183→  1183→BASE = "https://api.mistral.ai/v1"
+  1184→  1184→
+  1185→  1185→
+  1186→  1186→class MistralProvider(LLMProvider):
+  1187→  1187→    name = "mistral"
+  1188→  1188→
+  1189→  1189→    async def verify(self, key: str):
+  1190→  1190→        try:
+  1191→  1191→            async with httpx.AsyncClient(timeout=15) as c:
+  1192→  1192→                r = await c.get(f"{BASE}/models",
+  1193→  1193→                                headers={"Authorization": f"Bearer {key}"})
+  1194→  1194→            if r.status_code == 200:
+  1195→  1195→                return True, "Clé Mistral valide ✅"
+  1196→  1196→            if r.status_code == 401:
+  1197→  1197→                return False, "Clé Mistral refusée (401). Vérifie la clé."
+  1198→  1198→            return False, f"Mistral a répondu {r.status_code}"
+  1199→  1199→        except Exception as e:
+  1200→  1200→            return False, f"Erreur réseau Mistral : {e}"
+  1201→  1201→
+  1202→  1202→    async def chat(self, key, messages, *, temperature=0.3, stream_cb=None):
+  1203→  1203→        url = f"{BASE}/chat/completions"
+  1204→  1204→        headers = {"Authorization": f"Bearer {key}"}
+  1205→  1205→        body = {
+  1206→  1206→            "model": "mistral-large-latest",
+  1207→  1207→            "messages": messages,
+  1208→  1208→            "temperature": temperature,
+  1209→  1209→        }
+  1210→  1210→
+  1211→  1211→        if stream_cb is None:
+  1212→  1212→            async with httpx.AsyncClient(timeout=120) as c:
+  1213→  1213→                r = await c.post(url, headers=headers, json=body)
+  1214→  1214→                r.raise_for_status()
+  1215→  1215→                return r.json()["choices"][0]["message"]["content"]
+  1216→  1216→
+  1217→  1217→        # --- Mode streaming token par token
+  1218→  1218→        body["stream"] = True
+  1219→  1219→        full = []
+  1220→  1220→        async with httpx.AsyncClient(timeout=180) as c:
+  1221→  1221→            async with c.stream("POST", url, headers=headers, json=body) as r:
+  1222→  1222→                r.raise_for_status()
+  1223→  1223→                async for line in r.aiter_lines():
+  1224→  1224→                    if not line or not line.startswith("data:"):
+  1225→  1225→                        continue
+  1226→  1226→                    payload = line[5:].strip()
+  1227→  1227→                    if payload == "[DONE]":
+  1228→  1228→                        break
+  1229→  1229→                    try:
+  1230→  1230→                        chunk = json.loads(payload)
+  1231→  1231→                    except json.JSONDecodeError:
+  1232→  1232→                        continue
+  1233→  1233→                    delta = chunk["choices"][0]["delta"].get("content", "")
+  1234→  1234→                    if delta:
+  1235→  1235→                        full.append(delta)
+  1236→  1236→                        await stream_cb(delta)
+  1237→  1237→        return "".join(full)
+  1238→  1238→backend/providers/agnes.py
+  1239→  1239→python
+  1240→  1240→"""
+  1241→  1241→Adaptateur Agnes — générique, basé sur une API compatible OpenAI.
+  1242→  1242→
+  1243→  1243→Variables d'environnement (à renseigner dès qu'on a la doc) :
+  1244→  1244→    AGNES_BASE_URL   ex: https://api.agnes.ai/v1
+  1245→  1245→    AGNES_MODEL      ex: agnes-chat-large
+  1246→  1246→    AGNES_TEST_PATH  ex: /models          (endpoint GET pour vérifier la clé)
+  1247→  1247→    AGNES_AUTH_STYLE ex: "bearer" | "x-api-key" | "query"
+  1248→  1248→
+  1249→  1249→Exemple .env :
+  1250→  1250→    AGNES_BASE_URL=https://api.agnes.ai/v1
+  1251→  1251→    AGNES_MODEL=agnes-chat-large
+  1252→  1252→    AGNES_TEST_PATH=/models
+  1253→  1253→    AGNES_AUTH_STYLE=bearer
+  1254→  1254→"""
+  1255→  1255→import os
+  1256→  1256→import json
+  1257→  1257→import httpx
+  1258→  1258→from .base import LLMProvider
+  1259→  1259→
+  1260→  1260→BASE_URL = os.getenv("AGNES_BASE_URL", "").rstrip("/")
+  1261→  1261→MODEL = os.getenv("AGNES_MODEL", "agnes-chat")
+  1262→  1262→TEST_PATH = os.getenv("AGNES_TEST_PATH", "/models")
+  1263→  1263→AUTH_STYLE = os.getenv("AGNES_AUTH_STYLE", "bearer")
+  1264→  1264→
+  1265→  1265→
+  1266→  1266→def _headers(key: str) -> dict:
+  1267→  1267→    if AUTH_STYLE == "x-api-key":
+  1268→  1268→        return {"x-api-key": key, "Content-Type": "application/json"}
+  1269→  1269→    return {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+  1270→  1270→
+  1271→  1271→
+  1272→  1272→class AgnesProvider(LLMProvider):
+  1273→  1273→    name = "agnes"
+  1274→  1274→
+  1275→  1275→    async def verify(self, key: str):
+  1276→  1276→        if not BASE_URL:
+  1277→  1277→            return False, ("Agnes non configuré côté serveur. "
+  1278→  1278→                           "Renseigne AGNES_BASE_URL dans .env.")
+  1279→  1279→        try:
+  1280→  1280→            async with httpx.AsyncClient(timeout=15) as c:
+  1281→  1281→                r = await c.get(f"{BASE_URL}{TEST_PATH}", headers=_headers(key))
+  1282→  1282→            if r.status_code == 200:
+  1283→  1283→                return True, "Clé Agnes valide ✅"
+  1284→  1284→            if r.status_code in (401, 403):
+  1285→  1285→                return False, "Clé Agnes refusée. Vérifie la clé."
+  1286→  1286→            return False, f"Agnes a répondu {r.status_code}"
+  1287→  1287→        except Exception as e:
+  1288→  1288→            return False, f"Erreur réseau Agnes : {e}"
+  1289→  1289→
+  1290→  1290→    async def chat(self, key, messages, *, temperature=0.3, stream_cb=None):
+  1291→  1291→        if not BASE_URL:
+  1292→  1292→            raise RuntimeError("AGNES_BASE_URL non configuré.")
+  1293→  1293→        url = f"{BASE_URL}/chat/completions"
+  1294→  1294→        body = {"model": MODEL, "messages": messages, "temperature": temperature}
+  1295→  1295→
+  1296→  1296→        if stream_cb is None:
+  1297→  1297→            async with httpx.AsyncClient(timeout=120) as c:
+  1298→  1298→                r = await c.post(url, headers=_headers(key), json=body)
+  1299→  1299→                r.raise_for_status()
+  1300→  1300→                return r.json()["choices"][0]["message"]["content"]
+  1301→  1301→
+  1302→  1302→        body["stream"] = True
+  1303→  1303→        full = []
+  1304→  1304→        async with httpx.AsyncClient(timeout=180) as c:
+  1305→  1305→            async with c.stream("POST", url, headers=_headers(key), json=body) as r:
+  1306→  1306→                r.raise_for_status()
+  1307→  1307→                async for line in r.aiter_lines():
+  1308→  1308→                    if not line or not line.startswith("data:"):
+  1309→  1309→                        continue
+  1310→  1310→                    payload = line[5:].strip()
+  1311→  1311→                    if payload == "[DONE]":
+  1312→  1312→                        break
+  1313→  1313→                    try:
+  1314→  1314→                        chunk = json.loads(payload)
+  1315→  1315→                        delta = chunk["choices"][0]["delta"].get("content", "")
+  1316→  1316→                        if delta:
+  1317→  1317→                            full.append(delta)
+  1318→  1318→                            await stream_cb(delta)
+  1319→  1319→                    except Exception:
+  1320→  1320→                        continue
+  1321→  1321→        return "".join(full)
+  1322→  1322→backend/providers/registry.py
+  1323→  1323→python
+  1324→  1324→from .base import LLMProvider
+  1325→  1325→from .mistral import MistralProvider
+  1326→  1326→from .agnes import AgnesProvider
+  1327→  1327→
+  1328→  1328→_PROVIDERS: dict[str, LLMProvider] = {
+  1329→  1329→    "mistral": MistralProvider(),
+  1330→  1330→    "agnes": AgnesProvider(),
+  1331→  1331→}
+  1332→  1332→
+  1333→  1333→def get_provider(name: str) -> LLMProvider:
+  1334→  1334→    if name not in _PROVIDERS:
+  1335→  1335→        raise ValueError(f"Provider inconnu : {name}")
+  1336→  1336→    return _PROVIDERS[name]
+  1337→  1337→
+  1338→  1338→def list_providers() -> list[str]:
+  1339→  1339→    return list(_PROVIDERS.keys())
+  1340→  1340→backend/llm_router.py (simplifié)
+  1341→  1341→python
+  1342→  1342→from database import SessionLocal, ApiKey
+  1343→  1343→from security import decrypt
+  1344→  1344→from providers.registry import get_provider
+  1345→  1345→
+  1346→  1346→
+  1347→  1347→def get_user_key(provider: str) -> str | None:
+  1348→  1348→    db = SessionLocal()
+  1349→  1349→    row = db.query(ApiKey).filter_by(provider=provider).first()
+  1350→  1350→    db.close()
+  1351→  1351→    return decrypt(row.encrypted) if row else None
+  1352→  1352→
+  1353→  1353→
+  1354→  1354→async def verify_key(provider: str, key: str) -> tuple[bool, str]:
+  1355→  1355→    return await get_provider(provider).verify(key)
+  1356→  1356→
+  1357→  1357→
+  1358→  1358→async def chat(provider_name: str, messages, *, temperature=0.3, stream_cb=None) -> str:
+  1359→  1359→    key = get_user_key(provider_name)
+  1360→  1360→    if not key:
+  1361→  1361→        raise RuntimeError(f"Clé {provider_name} non configurée.")
+  1362→  1362→    return await get_provider(provider_name).chat(
+  1363→  1363→        key, messages, temperature=temperature, stream_cb=stream_cb
+  1364→  1364→    )
+  1365→  1365→backend/routes/api_keys.py (mise à jour)
+  1366→  1366→python
+  1367→  1367→from fastapi import APIRouter, HTTPException
+  1368→  1368→from pydantic import BaseModel
+  1369→  1369→from datetime import datetime
+  1370→  1370→from database import SessionLocal, ApiKey
+  1371→  1371→from security import encrypt, mask
+  1372→  1372→from providers.registry import list_providers, get_provider
+  1373→  1373→
+  1374→  1374→router = APIRouter(prefix="/api/keys")
+  1375→  1375→
+  1376→  1376→
+  1377→  1377→class KeyIn(BaseModel):
+  1378→  1378→    provider: str
+  1379→  1379→    key: str
+  1380→  1380→
+  1381→  1381→
+  1382→  1382→@router.get("/providers")
+  1383→  1383→def providers():
+  1384→  1384→    return {"providers": list_providers()}
+  1385→  1385→
+  1386→  1386→
+  1387→  1387→@router.post("/save")
+  1388→  1388→async def save(payload: KeyIn):
+  1389→  1389→    if payload.provider not in list_providers():
+  1390→  1390→        raise HTTPException(400, "Fournisseur inconnu")
+  1391→  1391→
+  1392→  1392→    ok, msg = await get_provider(payload.provider).verify(payload.key)
+  1393→  1393→    if not ok:
+  1394→  1394→        raise HTTPException(401, msg)
+  1395→  1395→
+  1396→  1396→    db = SessionLocal()
+  1397→  1397→    row = db.query(ApiKey).filter_by(provider=payload.provider).first()
+  1398→  1398→    if row:
+  1399→  1399→        row.encrypted = encrypt(payload.key)
+  1400→  1400→        row.verified_at = datetime.utcnow()
+  1401→  1401→    else:
+  1402→  1402→        db.add(ApiKey(provider=payload.provider,
+  1403→  1403→                      encrypted=encrypt(payload.key),
+  1404→  1404→                      verified_at=datetime.utcnow()))
+  1405→  1405→    db.commit()
+  1406→  1406→    db.close()
+  1407→  1407→
+  1408→  1408→    return {
+  1409→  1409→        "status": "ok",
+  1410→  1410→        "provider": payload.provider,
+  1411→  1411→        "masked": mask(payload.key),
+  1412→  1412→        "message": f"✅ {msg} — clé {payload.provider} enregistrée ({mask(payload.key)}).",
+  1413→  1413→    }
+  1414→  1414→
+  1415→  1415→
+  1416→  1416→@router.get("/status")
+  1417→  1417→def status():
+  1418→  1418→    db = SessionLocal()
+  1419→  1419→    rows = db.query(ApiKey).all()
+  1420→  1420→    db.close()
+  1421→  1421→    return {
+  1422→  1422→        r.provider: {
+  1423→  1423→            "configured": True,
+  1424→  1424→            "verified_at": r.verified_at.isoformat() if r.verified_at else None,
+  1425→  1425→        } for r in rows
+  1426→  1426→    }
+  1427→  1427→🅓 — Frontend Next.js 14 + shadcn/ui
+  1428→  1428→Initialisation
+  1429→  1429→bash
+  1430→  1430→npx create-next-app@latest frontend --typescript --tailwind --app --eslint --src-dir=false
+  1431→  1431→cd frontend
+  1432→  1432→npx shadcn@latest init    # style: "New York", base color: "Slate", CSS vars: yes
+  1433→  1433→npx shadcn@latest add button card input select textarea badge separator scroll-area progress tabs sonner alert skeleton
+  1434→  1434→npm i lucide-react
+  1435→  1435→frontend/.env.local
+  1436→  1436→text
+  1437→  1437→NEXT_PUBLIC_API_URL=http://localhost:8000
+  1438→  1438→frontend/lib/api.ts
+  1439→  1439→ts
+  1440→  1440→const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  1441→  1441→
+  1442→  1442→export type Provider = "mistral" | "agnes";
+  1443→  1443→
+  1444→  1444→export const api = {
+  1445→  1445→  async uploadDocument(form: FormData) {
+  1446→  1446→    const r = await fetch(`${API}/api/documents/upload`, { method: "POST", body: form });
+  1447→  1447→    if (!r.ok) throw new Error(await r.text());
+  1448→  1448→    return r.json();
+  1449→  1449→  },
+  1450→  1450→  async listDocuments() {
+  1451→  1451→    const r = await fetch(`${API}/api/documents/`);
+  1452→  1452→    return r.json();
+  1453→  1453→  },
+  1454→  1454→  async providers() {
+  1455→  1455→    const r = await fetch(`${API}/api/keys/providers`);
+  1456→  1456→    return r.json();
+  1457→  1457→  },
+  1458→  1458→  async saveKey(provider: Provider, key: string) {
+  1459→  1459→    const r = await fetch(`${API}/api/keys/save`, {
+  1460→  1460→      method: "POST",
+  1461→  1461→      headers: { "Content-Type": "application/json" },
+  1462→  1462→      body: JSON.stringify({ provider, key }),
+  1463→  1463→    });
+  1464→  1464→    const j = await r.json();
+  1465→  1465→    if (!r.ok) throw new Error(j.detail ?? "Erreur inconnue");
+  1466→  1466→    return j;
+  1467→  1467→  },
+  1468→  1468→  async keysStatus() {
+  1469→  1469→    const r = await fetch(`${API}/api/keys/status`);
+  1470→  1470→    return r.json();
+  1471→  1471→  },
+  1472→  1472→};
+  1473→  1473→frontend/lib/sse.ts — POST + SSE streaming
+  1474→  1474→ts
+  1475→  1475→export type SseHandler = (event: string, data: any) => void;
+  1476→  1476→
+  1477→  1477→export async function sseStream(
+  1478→  1478→  url: string,
+  1479→  1479→  body: any,
+  1480→  1480→  onEvent: SseHandler,
+  1481→  1481→  signal?: AbortSignal,
+  1482→  1482→) {
+  1483→  1483→  const res = await fetch(url, {
+  1484→  1484→    method: "POST",
+  1485→  1485→    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+  1486→  1486→    body: JSON.stringify(body),
+  1487→  1487→    signal,
+  1488→  1488→  });
+  1489→  1489→  if (!res.ok || !res.body) throw new Error(`SSE HTTP ${res.status}`);
+  1490→  1490→
+  1491→  1491→  const reader = res.body.getReader();
+  1492→  1492→  const decoder = new TextDecoder("utf-8");
+  1493→  1493→  let buffer = "";
+  1494→  1494→
+  1495→  1495→  while (true) {
+  1496→  1496→    const { value, done } = await reader.read();
+  1497→  1497→    if (done) break;
+  1498→  1498→    buffer += decoder.decode(value, { stream: true });
+  1499→  1499→
+  1500→  1500→    let idx: number;
+  1501→  1501→    while ((idx = buffer.indexOf("\n\n")) !== -1) {
+  1502→  1502→      const raw = buffer.slice(0, idx);
+  1503→  1503→      buffer = buffer.slice(idx + 2);
+  1504→  1504→
+  1505→  1505→      let event = "message";
+  1506→  1506→      const dataLines: string[] = [];
+  1507→  1507→      for (const line of raw.split("\n")) {
+  1508→  1508→        if (line.startsWith(":")) continue;            // keep-alive
+  1509→  1509→        if (line.startsWith("event:")) event = line.slice(6).trim();
+  1510→  1510→        else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+  1511→  1511→      }
+  1512→  1512→      if (!dataLines.length) continue;
+  1513→  1513→      try {
+  1514→  1514→        onEvent(event, JSON.parse(dataLines.join("\n")));
+  1515→  1515→      } catch {
+  1516→  1516→        // ignore
+  1517→  1517→      }
+  1518→  1518→    }
+  1519→  1519→  }
+  1520→  1520→}
+  1521→  1521→frontend/components/nav-bar.tsx
+  1522→  1522→tsx
+  1523→  1523→"use client";
+  1524→  1524→import Link from "next/link";
+  1525→  1525→import { usePathname } from "next/navigation";
+  1526→  1526→import { BookOpen, MessageSquare, Settings, GraduationCap } from "lucide-react";
+  1527→  1527→import { cn } from "@/lib/utils";
+  1528→  1528→
+  1529→  1529→const items = [
+  1530→  1530→  { href: "/", label: "Tableau de bord", icon: GraduationCap },
+  1531→  1531→  { href: "/documents", label: "Cours", icon: BookOpen },
+  1532→  1532→  { href: "/chat", label: "Questions", icon: MessageSquare },
+  1533→  1533→  { href: "/settings", label: "Clés API", icon: Settings },
+  1534→  1534→];
+  1535→  1535→
+  1536→  1536→export function NavBar() {
+  1537→  1537→  const pathname = usePathname();
+  1538→  1538→  return (
+  1539→  1539→    <nav className="border-b bg-background">
+  1540→  1540→      <div className="container flex h-14 items-center gap-6">
+  1541→  1541→        <span className="font-bold">🎓 Aide au Devoir</span>
+  1542→  1542→        <div className="flex gap-1">
+  1543→  1543→          {items.map(({ href, label, icon: Icon }) => (
+  1544→  1544→            <Link
+  1545→  1545→              key={href}
+  1546→  1546→              href={href}
+  1547→  1547→              className={cn(
+  1548→  1548→                "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors",
+  1549→  1549→                pathname === href
+  1550→  1550→                  ? "bg-secondary text-secondary-foreground"
+  1551→  1551→                  : "text-muted-foreground hover:bg-secondary/50",
+  1552→  1552→              )}
+  1553→  1553→            >
+  1554→  1554→              <Icon className="h-4 w-4" />
+  1555→  1555→              {label}
+  1556→  1556→            </Link>
+  1557→  1557→          ))}
+  1558→  1558→        </div>
+  1559→  1559→      </div>
+  1560→  1560→    </nav>
+  1561→  1561→  );
+  1562→  1562→}
+  1563→  1563→frontend/app/layout.tsx
+  1564→  1564→tsx
+  1565→  1565→import "./globals.css";
+  1566→  1566→import { NavBar } from "@/components/nav-bar";
+  1567→  1567→import { Toaster } from "@/components/ui/sonner";
+  1568→  1568→
+  1569→  1569→export const metadata = { title: "Aide au Devoir", description: "Assistant scolaire RAG" };
+  1570→  1570→
+  1571→  1571→export default function RootLayout({ children }: { children: React.ReactNode }) {
+  1572→  1572→  return (
+  1573→  1573→    <html lang="fr">
+  1574→  1574→      <body className="min-h-screen bg-background text-foreground antialiased">
+  1575→  1575→        <NavBar />
+  1576→  1576→        <main className="container py-8">{children}</main>
+  1577→  1577→        <Toaster richColors position="top-right" />
+  1578→  1578→      </body>
+  1579→  1579→    </html>
+  1580→  1580→  );
+  1581→  1581→}
+  1582→  1582→frontend/components/api-key-form.tsx
+  1583→  1583→tsx
+  1584→  1584→"use client";
+  1585→  1585→import { useEffect, useState } from "react";
+  1586→  1586→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+  1587→  1587→import { Input } from "@/components/ui/input";
+  1588→  1588→import { Button } from "@/components/ui/button";
+  1589→  1589→import { Badge } from "@/components/ui/badge";
+  1590→  1590→import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+  1591→  1591→import { api, Provider } from "@/lib/api";
+  1592→  1592→import { toast } from "sonner";
+  1593→  1593→import { CheckCircle2, Loader2, ShieldCheck } from "lucide-react";
+  1594→  1594→
+  1595→  1595→export function ApiKeyForm() {
+  1596→  1596→  const [provider, setProvider] = useState<Provider>("mistral");
+  1597→  1597→  const [key, setKey] = useState("");
+  1598→  1598→  const [loading, setLoading] = useState(false);
+  1599→  1599→  const [status, setStatus] = useState<Record<string, any>>({});
+  1600→  1600→
+  1601→  1601→  useEffect(() => { api.keysStatus().then(setStatus); }, []);
+  1602→  1602→
+  1603→  1603→  async function handleSave() {
+  1604→  1604→    if (!key.trim()) return toast.error("Colle une clé avant d'enregistrer.");
+  1605→  1605→    setLoading(true);
+  1606→  1606→    try {
+  1607→  1607→      const res = await api.saveKey(provider, key.trim());
+  1608→  1608→      toast.success(res.message ?? "Clé enregistrée");
+  1609→  1609→      setKey("");
+  1610→  1610→      setStatus(await api.keysStatus());
+  1611→  1611→    } catch (e: any) {
+  1612→  1612→      toast.error(e.message ?? "Échec de la vérification");
+  1613→  1613→    } finally {
+  1614→  1614→      setLoading(false);
+  1615→  1615→    }
+  1616→  1616→  }
+  1617→  1617→
+  1618→  1618→  return (
+  1619→  1619→    <Card>
+  1620→  1620→      <CardHeader>
+  1621→  1621→        <CardTitle className="flex items-center gap-2">
+  1622→  1622→          <ShieldCheck className="h-5 w-5" /> Clés API
+  1623→  1623→        </CardTitle>
+  1624→  1624→        <CardDescription>
+  1625→  1625→          Les clés sont chiffrées côté serveur et vérifiées en direct auprès du fournisseur.
+  1626→  1626→        </CardDescription>
+  1627→  1627→      </CardHeader>
+  1628→  1628→      <CardContent className="space-y-4">
+  1629→  1629→        <div className="grid grid-cols-[160px_1fr] gap-3">
+  1630→  1630→          <Select value={provider} onValueChange={(v) => setProvider(v as Provider)}>
+  1631→  1631→            <SelectTrigger><SelectValue /></SelectTrigger>
+  1632→  1632→            <SelectContent>
+  1633→  1633→              <SelectItem value="mistral">Mistral</SelectItem>
+  1634→  1634→              <SelectItem value="agnes">Agnes</SelectItem>
+  1635→  1635→            </SelectContent>
+  1636→  1636→          </Select>
+  1637→  1637→          <Input
+  1638→  1638→            type="password"
+  1639→  1639→            placeholder="sk-..."
+  1640→  1640→            value={key}
+  1641→  1641→            onChange={(e) => setKey(e.target.value)}
+  1642→  1642→            onKeyDown={(e) => e.key === "Enter" && handleSave()}
+  1643→  1643→          />
+  1644→  1644→        </div>
+  1645→  1645→
+  1646→  1646→        <Button onClick={handleSave} disabled={loading} className="w-full">
+  1647→  1647→          {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Vérification…</> : "Vérifier & enregistrer"}
+  1648→  1648→        </Button>
+  1649→  1649→
+  1650→  1650→        <div className="space-y-2 pt-2">
+  1651→  1651→          {(["mistral", "agnes"] as Provider[]).map((p) => {
+  1652→  1652→            const st = status[p];
+  1653→  1653→            return (
+  1654→  1654→              <div key={p} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+  1655→  1655→                <span className="capitalize font-medium">{p}</span>
+  1656→  1656→                {st?.configured ? (
+  1657→  1657→                  <Badge variant="secondary" className="gap-1">
+  1658→  1658→                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> configurée
+  1659→  1659→                  </Badge>
+  1660→  1660→                ) : (
+  1661→  1661→                  <Badge variant="outline">non configurée</Badge>
+  1662→  1662→                )}
+  1663→  1663→              </div>
+  1664→  1664→            );
+  1665→  1665→          })}
+  1666→  1666→        </div>
+  1667→  1667→      </CardContent>
+  1668→  1668→    </Card>
+  1669→  1669→  );
+  1670→  1670→}
+  1671→  1671→frontend/app/settings/page.tsx
+  1672→  1672→tsx
+  1673→  1673→import { ApiKeyForm } from "@/components/api-key-form";
+  1674→  1674→
+  1675→  1675→export default function SettingsPage() {
+  1676→  1676→  return (
+  1677→  1677→    <div className="mx-auto max-w-xl space-y-6">
+  1678→  1678→      <h1 className="text-2xl font-bold">Paramètres</h1>
+  1679→  1679→      <ApiKeyForm />
+  1680→  1680→    </div>
+  1681→  1681→  );
+  1682→  1682→}
+  1683→  1683→frontend/components/file-upload.tsx
+  1684→  1684→tsx
+  1685→  1685→"use client";
+  1686→  1686→import { useState } from "react";
+  1687→  1687→import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+  1688→  1688→import { Input } from "@/components/ui/input";
+  1689→  1689→import { Button } from "@/components/ui/button";
+  1690→  1690→import { Progress } from "@/components/ui/progress";
+  1691→  1691→import { api } from "@/lib/api";
+  1692→  1692→import { toast } from "sonner";
+  1693→  1693→import { Upload, FileText } from "lucide-react";
+  1694→  1694→
+  1695→  1695→export function FileUpload({ onUploaded }: { onUploaded?: () => void }) {
+  1696→  1696→  const [title, setTitle] = useState("");
+  1697→  1697→  const [subject, setSubject] = useState("général");
+  1698→  1698→  const [file, setFile] = useState<File | null>(null);
+  1699→  1699→  const [loading, setLoading] = useState(false);
+  1700→  1700→
+  1701→  1701→  async function handleUpload() {
+  1702→  1702→    if (!file || !title.trim()) return toast.error("Titre et fichier requis.");
+  1703→  1703→    setLoading(true);
+  1704→  1704→    try {
+  1705→  1705→      const fd = new FormData();
+  1706→  1706→      fd.append("file", file);
+  1707→  1707→      fd.append("title", title.trim());
+  1708→  1708→      fd.append("subject", subject.trim() || "général");
+  1709→  1709→      const res = await api.uploadDocument(fd);
+  1710→  1710→      toast.success(res.message ?? "Cours importé");
+  1711→  1711→      setTitle(""); setFile(null);
+  1712→  1712→      onUploaded?.();
+  1713→  1713→    } catch (e: any) {
+  1714→  1714→      toast.error(e.message ?? "Erreur d'import");
+  1715→  1715→    } finally {
+  1716→  1716→      setLoading(false);
+  1717→  1717→    }
+  1718→  1718→  }
+  1719→  1719→
+  1720→  1720→  return (
+  1721→  1721→    <Card>
+  1722→  1722→      <CardHeader>
+  1723→  1723→        <CardTitle className="flex items-center gap-2">
+  1724→  1724→          <FileText className="h-5 w-5" /> Importer un cours
+  1725→  1725→        </CardTitle>
+  1726→  1726→      </CardHeader>
+  1727→  1727→      <CardContent className="space-y-3">
+  1728→  1728→        <Input placeholder="Titre (ex: Maths – Chapitre 3)" value={title}
+  1729→  1729→               onChange={(e) => setTitle(e.target.value)} />
+  1730→  1730→        <Input placeholder="Matière" value={subject}
+  1731→  1731→               onChange={(e) => setSubject(e.target.value)} />
+  1732→  1732→
+  1733→  1733→        <label className="flex cursor-pointer items-center gap-3 rounded-md border border-dashed px-4 py-6 hover:bg-secondary/40">
+  1734→  1734→          <Upload className="h-5 w-5" />
+  1735→  1735→          <span className="text-sm text-muted-foreground">
+  1736→  1736→            {file ? file.name : "PDF, DOCX, TXT, PNG, JPEG"}
+  1737→  1737→          </span>
+  1738→  1738→          <input type="file" hidden accept=".pdf,.docx,.txt,.png,.jpg,.jpeg"
+  1739→  1739→                 onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+  1740→  1740→        </label>
+  1741→  1741→
+  1742→  1742→        {loading && <Progress value={70} className="h-1" />}
+  1743→  1743→
+  1744→  1744→        <Button onClick={handleUpload} disabled={loading} className="w-full">
+  1745→  1745→          {loading ? "Import en cours…" : "Importer"}
+  1746→  1746→        </Button>
+  1747→  1747→      </CardContent>
+  1748→  1748→    </Card>
+  1749→  1749→  );
+  1750→  1750→}
+  1751→  1751→frontend/app/documents/page.tsx
+  1752→  1752→tsx
+  1753→  1753→"use client";
+  1754→  1754→import { useEffect, useState } from "react";
+  1755→  1755→import { FileUpload } from "@/components/file-upload";
+  1756→  1756→import { Card, CardContent } from "@/components/ui/card";
+  1757→  1757→import { Badge } from "@/components/ui/badge";
+  1758→  1758→import { api } from "@/lib/api";
+  1759→  1759→
+  1760→  1760→export default function DocumentsPage() {
+  1761→  1761→  const [docs, setDocs] = useState<any[]>([]);
+  1762→  1762→
+  1763→  1763→  const refresh = () => api.listDocuments().then((r) => setDocs(r.documents ?? []));
+  1764→  1764→  useEffect(() => { refresh(); }, []);
+  1765→  1765→
+  1766→  1766→  return (
+  1767→  1767→    <div className="mx-auto max-w-3xl space-y-6">
+  1768→  1768→      <h1 className="text-2xl font-bold">Cours importés</h1>
+  1769→  1769→      <FileUpload onUploaded={refresh} />
+  1770→  1770→
+  1771→  1771→      <div className="space-y-2">
+  1772→  1772→        {docs.length === 0 && (
+  1773→  1773→          <p className="text-sm text-muted-foreground">Aucun cours importé pour l'instant.</p>
+  1774→  1774→        )}
+  1775→  1775→        {docs.map((d) => (
+  1776→  1776→          <Card key={d.id}>
+  1777→  1777→            <CardContent className="flex items-center justify-between py-4">
+  1778→  1778→              <div>
+  1779→  1779→                <p className="font-medium">{d.title}</p>
+  1780→  1780→                <p className="text-xs text-muted-foreground">
+  1781→  1781→                  {d.kind.toUpperCase()} · {d.chunks ?? "?"} segments
+  1782→  1782→                </p>
+  1783→  1783→              </div>
+  1784→  1784→              <Badge variant="outline">{d.subject}</Badge>
+  1785→  1785→            </CardContent>
+  1786→  1786→          </Card>
+  1787→  1787→        ))}
+  1788→  1788→      </div>
+  1789→  1789→    </div>
+  1790→  1790→  );
+  1791→  1791→}
+  1792→  1792→📝 Côté backend, ajoute un endpoint GET /api/documents/ qui renvoie {documents: [...]}.
+  1793→  1793→
+  1794→  1794→frontend/components/agent-timeline.tsx
+  1795→  1795→tsx
+  1796→  1796→"use client";
+  1797→  1797→import { CheckCircle2, Loader2, Circle, AlertCircle } from "lucide-react";
+  1798→  1798→import { Card, CardContent } from "@/components/ui/card";
+  1799→  1799→import { Badge } from "@/components/ui/badge";
+  1800→  1800→import { cn } from "@/lib/utils";
+  1801→  1801→
+  1802→  1802→export type AgentState = {
+  1803→  1803→  id: string;
+  1804→  1804→  label: string;
+  1805→  1805→  status: "idle" | "running" | "done" | "error";
+  1806→  1806→  logs: string[];
+  1807→  1807→  summary?: string;
+  1808→  1808→};
+  1809→  1809→
+  1810→  1810→const STATUS_ICON = {
+  1811→  1811→  idle: <Circle className="h-4 w-4 text-muted-foreground/40" />,
+  1812→  1812→  running: <Loader2 className="h-4 w-4 animate-spin text-blue-500" />,
+  1813→  1813→  done: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
+  1814→  1814→  error: <AlertCircle className="h-4 w-4 text-red-500" />,
+  1815→  1815→};
+  1816→  1816→
+  1817→  1817→export function AgentTimeline({ agents }: { agents: AgentState[] }) {
+  1818→  1818→  return (
+  1819→  1819→    <div className="space-y-2">
+  1820→  1820→      {agents.map((a) => (
+  1821→  1821→        <Card key={a.id}>
+  1822→  1822→          <CardContent className="flex items-start gap-3 py-3">
+  1823→  1823→            <div className="mt-0.5">{STATUS_ICON[a.status]}</div>
+  1824→  1824→            <div className="flex-1">
+  1825→  1825→              <div className="flex items-center justify-between">
+  1826→  1826→                <span className="font-medium">{a.label}</span>
+  1827→  1827→                <Badge
+  1828→  1828→                  variant={a.status === "done" ? "secondary" : "outline"}
+  1829→  1829→                  className={cn(
+  1830→  1830→                    a.status === "running" && "border-blue-500 text-blue-600",
+  1831→  1831→                    a.status === "error" && "border-red-500 text-red-600",
+  1832→  1832→                  )}
+  1833→  1833→                >
+  1834→  1834→                  {a.status === "running" ? "en cours…"
+  1835→  1835→                    : a.status === "done" ? "prêt"
+  1836→  1836→                    : a.status === "error" ? "erreur"
+  1837→  1837→                    : "en attente"}
+  1838→  1838→                </Badge>
+  1839→  1839→              </div>
+  1840→  1840→              {a.logs.length > 0 && (
+  1841→  1841→                <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+  1842→  1842→                  {a.logs.slice(-3).map((l, i) => <li key={i}>· {l}</li>)}
+  1843→  1843→                </ul>
+  1844→  1844→              )}
+  1845→  1845→              {a.summary && a.status === "done" && (
+  1846→  1846→                <p className="mt-1 text-xs font-medium text-emerald-700">{a.summary}</p>
+  1847→  1847→              )}
+  1848→  1848→            </div>
+  1849→  1849→          </CardContent>
+  1850→  1850→        </Card>
+  1851→  1851→      ))}
+  1852→  1852→    </div>
+  1853→  1853→  );
+  1854→  1854→}
+  1855→  1855→frontend/components/chat-stream.tsx
+  1856→  1856→tsx
+  1857→  1857→"use client";
+  1858→  1858→import { useRef, useState } from "react";
+  1859→  1859→import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+  1860→  1860→import { Textarea } from "@/components/ui/textarea";
+  1861→  1861→import { Button } from "@/components/ui/button";
+  1862→  1862→import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+  1863→  1863→import { Separator } from "@/components/ui/separator";
+  1864→  1864→import { AgentTimeline, AgentState } from "./agent-timeline";
+  1865→  1865→import { sseStream } from "@/lib/sse";
+  1866→  1866→import { toast } from "sonner";
+  1867→  1867→import { Send, Square } from "lucide-react";
+  1868→  1868→
+  1869→  1869→const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  1870→  1870→
+  1871→  1871→const AGENT_ORDER: { id: string; label: string }[] = [
+  1872→  1872→  { id: "planner", label: "🧭 Planificateur" },
+  1873→  1873→  { id: "retriever", label: "🔍 Chercheur" },
+  1874→  1874→  { id: "solver", label: "✍️ Solveur" },
+  1875→  1875→  { id: "tutor", label: "👨‍🏫 Tuteur" },
+  1876→  1876→];
+  1877→  1877→
+  1878→  1878→function freshAgents(): AgentState[] {
+  1879→  1879→  return AGENT_ORDER.map((a) => ({ ...a, status: "idle", logs: [] }));
+  1880→  1880→}
+  1881→  1881→
+  1882→  1882→export function ChatStream() {
+  1883→  1883→  const [question, setQuestion] = useState("");
+  1884→  1884→  const [provider, setProvider] = useState<"mistral" | "agnes">("mistral");
+  1885→  1885→  const [agents, setAgents] = useState<AgentState[]>(freshAgents());
+  1886→  1886→  const [answer, setAnswer] = useState("");
+  1887→  1887→  const [tutor, setTutor] = useState("");
+  1888→  1888→  const [busy, setBusy] = useState(false);
+  1889→  1889→  const [hits, setHits] = useState<any[]>([]);
+  1890→  1890→  const abortRef = useRef<AbortController | null>(null);
+  1891→  1891→
+  1892→  1892→  function updateAgent(id: string, patch: Partial<AgentState> | ((a: AgentState) => AgentState)) {
+  1893→  1893→    setAgents((prev) => prev.map((a) => {
+  1894→  1894→      if (a.id !== id) return a;
+  1895→  1895→      return typeof patch === "function" ? patch(a) : { ...a, ...patch };
+  1896→  1896→    }));
+  1897→  1897→  }
+  1898→  1898→
+  1899→  1899→  async function ask() {
+  1900→  1900→    if (!question.trim()) return;
+  1901→  1901→    setBusy(true);
+  1902→  1902→    setAnswer("");
+  1903→  1903→    setTutor("");
+  1904→  1904→    setHits([]);
+  1905→  1905→    setAgents(freshAgents());
+  1906→  1906→
+  1907→  1907→    const ctrl = new AbortController();
+  1908→  1908→    abortRef.current = ctrl;
+  1909→  1909→
+  1910→  1910→    try {
+  1911→  1911→      await sseStream(
+  1912→  1912→        `${API}/api/chat/ask/stream`,
+  1913→  1913→        { question: question.trim(), provider },
+  1914→  1914→        (event, data) => {
+  1915→  1915→          switch (event) {
+  1916→  1916→            case "pipeline.start":
+  1917→  1917→              toast.info("Pipeline démarré");
+  1918→  1918→              break;
+  1919→  1919→
+  1920→  1920→            case "agent.start":
+  1921→  1921→              updateAgent(data.id, { status: "running" });
+  1922→  1922→              break;
+  1923→  1923→
+  1924→  1924→            case "agent.log":
+  1925→  1925→              updateAgent(data.id, (a) => ({ ...a, logs: [...a.logs, data.message] }));
+  1926→  1926→              break;
+  1927→  1927→
+  1928→  1928→            case "agent.done":
+  1929→  1929→              updateAgent(data.id, { status: "done", summary: data.summary });
+  1930→  1930→              break;
+  1931→  1931→
+  1932→  1932→            case "retrieval.hit":
+  1933→  1933→              setHits((h) => [...h, data]);
+  1934→  1934→              break;
+  1935→  1935→
+  1936→  1936→            case "answer.token":
+  1937→  1937→              setAnswer((a) => a + data.token);
+  1938→  1938→              break;
+  1939→  1939→
+  1940→  1940→            case "pipeline.done":
+  1941→  1941→              if (data.answer) setAnswer(data.answer);
+  1942→  1942→              toast.success("Réponse prête ✅");
+  1943→  1943→              break;
+  1944→  1944→
+  1945→  1945→            case "pipeline.error":
+  1946→  1946→              toast.error(data.message);
+  1947→  1947→              setAgents((prev) => prev.map((a) =>
+  1948→  1948→                a.status === "running" ? { ...a, status: "error" } : a));
+  1949→  1949→              break;
+  1950→  1950→          }
+  1951→  1951→        },
+  1952→  1952→        ctrl.signal,
+  1953→  1953→      );
+  1954→  1954→    } catch (e: any) {
+  1955→  1955→      if (e.name !== "AbortError") toast.error(e.message ?? "Erreur de streaming");
+  1956→  1956→    } finally {
+  1957→  1957→      setBusy(false);
+  1958→  1958→      abortRef.current = null;
+  1959→  1959→    }
+  1960→  1960→  }
+  1961→  1961→
+  1962→  1962→  function stop() {
+  1963→  1963→    abortRef.current?.abort();
+  1964→  1964→    setBusy(false);
+  1965→  1965→    setAgents((prev) => prev.map((a) =>
+  1966→  1966→      a.status === "running" ? { ...a, status: "error", summary: "interrompu" } : a));
+  1967→  1967→  }
+  1968→  1968→
+  1969→  1969→  return (
+  1970→  1970→    <div className="grid gap-6 md:grid-cols-[1fr_380px]">
+  1971→  1971→      {/* Colonne gauche : question + réponse */}
+  1972→  1972→      <div className="space-y-4">
+  1973→  1973→        <Card>
+  1974→  1974→          <CardHeader><CardTitle>💬 Poser une question</CardTitle></CardHeader>
+  1975→  1975→          <CardContent className="space-y-3">
+  1976→  1976→            <Textarea
+  1977→  1977→              rows={3}
+  1978→  1978→              value={question}
+  1979→  1979→              onChange={(e) => setQuestion(e.target.value)}
+  1980→  1980→              placeholder="Ex : Explique la dérivée d'une fonction composée, avec un exemple du cours."
+  1981→  1981→            />
+  1982→  1982→            <div className="flex gap-2">
+  1983→  1983→              <Select value={provider} onValueChange={(v) => setProvider(v as any)}>
+  1984→  1984→                <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+  1985→  1985→                <SelectContent>
+  1986→  1986→                  <SelectItem value="mistral">Mistral</SelectItem>
+  1987→  1987→                  <SelectItem value="agnes">Agnes</SelectItem>
+  1988→  1988→                </SelectContent>
+  1989→  1989→              </Select>
+  1990→  1990→              <Button onClick={ask} disabled={busy} className="flex-1">
+  1991→  1991→                <Send className="mr-2 h-4 w-4" />
+  1992→  1992→                {busy ? "Génération…" : "Envoyer"}
+  1993→  1993→              </Button>
+  1994→  1994→              {busy && (
+  1995→  1995→                <Button variant="outline" onClick={stop}>
+  1996→  1996→                  <Square className="h-4 w-4" />
+  1997→  1997→                </Button>
+  1998→  1998→              )}
+  1999→  1999→            </div>
+  2000→  2000→          </CardContent>
+
+[showing lines 1-2000 of 2002; use offset=2001 with limit to continue reading]

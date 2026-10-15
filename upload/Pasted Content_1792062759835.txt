@@ -1,0 +1,2833 @@
+je veux creer une aide au devoir. on importe les cours voulu, on les titre dans le logiciel, les agents parcourent le documents et disent quand ils sont prets a agir et on a une interface qui apparait où on oeut poser toutes les questions qui sont dans le document ou tiré de l'actualité ou des recherches ou des possibles livres que l'on peut importer sans limites dans le projet (png ou jpeg inclus). Ils pourront accueillir les API Agnes et Mistral par exemple que le user pourra inserer et avoir la confirmation que tout est okay et bien enregistré et commencer à travailler.
+The user wants to create a homework help application in French. Let me understand the requirements:
+
+Import courses/documents they want
+
+Title them in the software
+
+Agents scan the documents and say when they're ready to act
+
+An interface appears where you can ask questions from the document, current events, research, or possible books
+
+Import unlimited books (including PNG/JPEG images)
+
+Support APIs like Agnes (probably "Agnes AI"?) and Mistral
+
+User can insert their API keys, get confirmation everything is OK and saved
+
+Start working
+
+Let me design a comprehensive architecture and provide code/guidance.
+
+I'll write this in French since the user wrote in French.
+
+Let me structure a full project:
+
+Architecture:
+
+Frontend: React/Next.js or simple HTML/JS
+
+Backend: FastAPI (Python) or Node.js
+
+Document processing: PDF, DOCX, TXT, PNG/JPEG (OCR)
+
+Vector store: ChromaDB / FAISS / Qdrant
+
+LLM: Mistral API, Agnes API (I'll assume it's an AI API)
+
+Agents: orchestration with LangChain or custom
+
+Let me provide a working starter project.
+
+Actually, let me think about "Agnes" - I'm not sure what Agnes AI is. There's "Agnes AI" which might be some AI service. I'll treat it as a generic OpenAI-compatible API.
+
+Let me write a complete guide with code.
+
+I'll create:
+
+Project structure
+
+Backend (FastAPI) with:
+
+Document upload endpoint
+
+OCR for images
+
+Vector indexing
+
+API key management (encrypted)
+
+Agent orchestration
+
+Chat endpoint
+
+Frontend (simple React or vanilla)
+
+Let me write it concisely but functionally.
+
+I'll produce a well-structured response with:
+
+Overview of architecture
+
+Tech stack choices
+
+Project structure
+
+Key code files
+
+Setup instructions
+
+Let me keep it practical.
+
+🎓 Aide au Devoir — Architecture & Projet complet
+Voici une conception complète et un starter fonctionnel pour ton application.
+
+1. Architecture globale
+text
+┌─────────────────────────────────────────────────────────────┐
+│  FRONTEND (Next.js / React + Tailwind)                      │
+│  - Import de cours (PDF, DOCX, TXT, PNG, JPEG)              │
+│  - Gestion des titres / matières                            │
+│  - Champ API keys (Mistral, Agnes) + bouton "Tester"        │
+│  - Interface Q/R type chat                                  │
+└───────────────┬─────────────────────────────────────────────┘
+                │ REST / WebSocket
+┌───────────────▼─────────────────────────────────────────────┐
+│  BACKEND (FastAPI Python)                                   │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
+│  │ Ingestion    │  │ Vector Store │  │ Agents           │  │
+│  │ PDF/DOCX/OCR │─▶│ ChromaDB     │◀─│ (Planner,        │  │
+│  │ (Tesseract)  │  │ (embeddings) │  │  Retriever,      │  │
+│  └──────────────┘  └──────────────┘  │  Solver, Tutor)  │  │
+│                                       └────────┬─────────┘  │
+│  ┌────────────────────────────────────────────▼─────────┐  │
+│  │ LLM Router : Mistral | Agnes | OpenAI-compat         │  │
+│  └──────────────────────────────────────────────────────┘  │
+│  SQLite/Postgres : users, docs, clés API chiffrées         │
+└─────────────────────────────────────────────────────────────┘
+2. Stack recommandée
+Couche	Choix
+Frontend	Next.js 14 + Tailwind + shadcn/ui
+Backend	FastAPI (Python 3.11)
+Vector DB	ChromaDB (local, simple)
+OCR	Tesseract + pytesseract (images) / pdfplumber (PDF texte)
+Embeddings	mistral-embed (Mistral) ou sentence-transformers local
+LLM	Mistral API + Agnes API (via adaptateur OpenAI-compatible)
+Secrets	cryptography.Fernet + clé maître en .env
+Agents	Orchestration maison (voir §5)
+3. Structure du projet
+text
+aide-devoir/
+├── backend/
+│   ├── main.py
+│   ├── config.py
+│   ├── security.py
+│   ├── database.py
+│   ├── ingestion.py          # PDF/DOCX/IMG → texte → chunks
+│   ├── vector_store.py       # ChromaDB
+│   ├── llm_router.py         # Mistral / Agnes
+│   ├── agents.py             # Planner, Retriever, Solver, Tutor
+│   ├── routes/
+│   │   ├── documents.py
+│   │   ├── api_keys.py
+│   │   └── chat.py
+│   └── requirements.txt
+└── frontend/
+    ├── app/
+    │   ├── page.tsx           # Dashboard
+    │   ├── upload/page.tsx
+    │   ├── settings/page.tsx  # API keys
+    │   └── chat/page.tsx
+    └── lib/api.ts
+4. Backend — code clé
+requirements.txt
+text
+fastapi
+uvicorn[standard]
+python-multipart
+sqlalchemy
+cryptography
+chromadb
+sentence-transformers
+pytesseract
+pdfplumber
+python-docx
+Pillow
+httpx
+pydantic
+config.py
+python
+import os
+from pathlib import Path
+
+BASE_DIR = Path(__file__).parent
+DATA_DIR = BASE_DIR / "data"
+UPLOAD_DIR = DATA_DIR / "uploads"
+CHROMA_DIR = DATA_DIR / "chroma"
+for d in (DATA_DIR, UPLOAD_DIR, CHROMA_DIR):
+    d.mkdir(parents=True, exist_ok=True)
+
+# Clé maître pour chiffrer les clés API des utilisateurs
+MASTER_KEY = os.environ.get("MASTER_KEY", "change-me-in-prod-32-bytes-base64==")
+security.py — chiffrement des clés API
+python
+import base64, hashlib
+from cryptography.fernet import Fernet
+from config import MASTER_KEY
+
+def _fernet() -> Fernet:
+    key = base64.urlsafe_b64encode(hashlib.sha256(MASTER_KEY.encode()).digest())
+    return Fernet(key)
+
+def encrypt(value: str) -> str:
+    return _fernet().encrypt(value.encode()).decode()
+
+def decrypt(token: str) -> str:
+    return _fernet().decrypt(token.encode()).decode()
+
+def mask(key: str) -> str:
+    return key[:4] + "…" + key[-4:] if len(key) > 8 else "****"
+database.py
+python
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, Text
+from sqlalchemy.orm import declarative_base, sessionmaker
+from datetime import datetime
+from config import DATA_DIR
+
+engine = create_engine(f"sqlite:///{DATA_DIR/'app.db'}", connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(bind=engine, autoflush=False)
+Base = declarative_base()
+
+class Document(Base):
+    __tablename__ = "documents"
+    id = Column(Integer, primary_key=True)
+    title = Column(String, index=True)
+    subject = Column(String, default="général")
+    kind = Column(String)                 # pdf/docx/txt/png/jpeg
+    path = Column(String)
+    text = Column(Text)                   # texte extrait (pour recherche rapide)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+    id = Column(Integer, primary_key=True)
+    provider = Column(String, unique=True)   # "mistral" | "agnes"
+    encrypted = Column(String)
+    verified_at = Column(DateTime, nullable=True)
+
+Base.metadata.create_all(engine)
+ingestion.py — PDF / DOCX / TXT / IMG
+python
+from pathlib import Path
+import pdfplumber, pytesseract
+from docx import Document as DocxDocument
+from PIL import Image
+
+def extract_text(path: Path) -> str:
+    ext = path.suffix.lower()
+    if ext == ".pdf":
+        with pdfplumber.open(path) as pdf:
+            txt = "\n".join(p.extract_text() or "" for p in pdf.pages)
+        # Si PDF scanné → OCR fallback
+        if len(txt.strip()) < 50:
+            imgs = []
+            with pdfplumber.open(path) as pdf:
+                for p in pdf.pages:
+                    imgs.append(p.to_image(resolution=200).original)
+            return "\n".join(pytesseract.image_to_string(i, lang="fra+eng") for i in imgs)
+        return txt
+    if ext == ".docx":
+        return "\n".join(p.text for p in DocxDocument(path).paragraphs)
+    if ext == ".txt":
+        return path.read_text(encoding="utf-8", errors="ignore")
+    if ext in (".png", ".jpg", ".jpeg"):
+        return pytesseract.image_to_string(Image.open(path), lang="fra+eng")
+    raise ValueError(f"Format non supporté : {ext}")
+
+def chunk(text: str, size: int = 800, overlap: int = 120):
+    chunks, i = [], 0
+    while i < len(text):
+        chunks.append(text[i:i+size])
+        i += size - overlap
+    return [c for c in chunks if c.strip()]
+vector_store.py
+python
+import chromadb
+from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
+from config import CHROMA_DIR
+
+_client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+_embed = SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+_collection = _client.get_or_create_collection("cours", embedding_function=_embed)
+
+def index_chunks(doc_id: int, title: str, chunks: list[str]):
+    _collection.add(
+        ids=[f"{doc_id}-{i}" for i in range(len(chunks))],
+        documents=chunks,
+        metadatas=[{"doc_id": doc_id, "title": title, "chunk": i} for i in range(len(chunks))],
+    )
+
+def search(query: str, k: int = 5):
+    r = _collection.query(query_texts=[query], n_results=k)
+    out = []
+    for doc, meta, dist in zip(r["documents"][0], r["metadatas"][0], r["distances"][0]):
+        out.append({"text": doc, "meta": meta, "score": 1 - dist})
+    return out
+llm_router.py — adaptateur Mistral / Agnes
+python
+import httpx
+from database import SessionLocal, ApiKey
+from security import decrypt
+
+PROVIDERS = {
+    "mistral": {
+        "base_url": "https://api.mistral.ai/v1",
+        "model": "mistral-large-latest",
+        "test_path": "/models",
+    },
+    "agnes": {
+        # Remplacer par l'URL réelle du service Agnes
+        "base_url": "https://api.agnes.ai/v1",
+        "model": "agnes-chat",
+        "test_path": "/models",
+    },
+}
+
+def get_key(provider: str) -> str | None:
+    db = SessionLocal()
+    row = db.query(ApiKey).filter_by(provider=provider).first()
+    db.close()
+    return decrypt(row.encrypted) if row else None
+
+async def verify_key(provider: str, key: str) -> bool:
+    cfg = PROVIDERS[provider]
+    async with httpx.AsyncClient(timeout=15) as c:
+        r = await c.get(cfg["base_url"] + cfg["test_path"],
+                        headers={"Authorization": f"Bearer {key}"})
+    return r.status_code == 200
+
+async def chat(provider: str, messages: list[dict], temperature=0.3) -> str:
+    key = get_key(provider)
+    if not key:
+        raise RuntimeError(f"Clé {provider} non configurée")
+    cfg = PROVIDERS[provider]
+    async with httpx.AsyncClient(timeout=120) as c:
+        r = await c.post(
+            f"{cfg['base_url']}/chat/completions",
+            headers={"Authorization": f"Bearer {key}"},
+            json={"model": cfg["model"], "messages": messages, "temperature": temperature},
+        )
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"]
+agents.py — orchestration multi-agents
+python
+from vector_store import search
+from llm_router import chat
+
+class Agent:
+    name = "Agent"
+    def __init__(self, provider: str):
+        self.provider = provider
+
+class PlannerAgent(Agent):
+    name = "Planificateur"
+    async def run(self, question: str) -> str:
+        return await chat(self.provider, [
+            {"role": "system", "content": "Tu décomposes une question d'élève en sous-tâches claires. Réponds en 3 puces max."},
+            {"role": "user", "content": question},
+        ])
+
+class RetrieverAgent(Agent):
+    name = "Chercheur"
+    def run(self, question: str, k=6):
+        return search(question, k=k)
+
+class SolverAgent(Agent):
+    name = "Solveur"
+    async def run(self, question: str, context: str, plan: str) -> str:
+        return await chat(self.provider, [
+            {"role": "system", "content":
+             "Tu es un professeur. Réponds en français, étape par étape, en citant les passages du cours fournis entre <cours>...</cours>. "
+             "Si l'info manque, dis-le."},
+            {"role": "user", "content": f"<cours>{context}</cours>\n\nPlan: {plan}\n\nQuestion: {question}"},
+        ])
+
+class TutorAgent(Agent):
+    name = "Tuteur"
+    async def run(self, question: str, answer: str) -> str:
+        return await chat(self.provider, [
+            {"role": "system", "content":
+             "Reformule la réponse pour un élève, propose 2 questions de vérification et un exercice d'application."},
+            {"role": "user", "content": f"Question: {question}\nRéponse brute: {answer}"},
+        ])
+
+async def run_pipeline(question: str, provider: str = "mistral"):
+    events = []
+    plan = await PlannerAgent(provider).run(question)
+    events.append(("plan", plan))
+
+    hits = RetrieverAgent(provider).run(question)
+    context = "\n---\n".join(h["text"] for h in hits) or "(aucun cours pertinent)"
+    events.append(("retrieval", [h["meta"] for h in hits]))
+
+    answer = await SolverAgent(provider).run(question, context, plan)
+    events.append(("answer", answer))
+
+    tuto = await TutorAgent(provider).run(question, answer)
+    events.append(("tutor", tuto))
+    return events
+routes/api_keys.py — insertion + confirmation
+python
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from datetime import datetime
+from database import SessionLocal, ApiKey
+from security import encrypt, mask
+from llm_router import verify_key
+
+router = APIRouter(prefix="/api/keys")
+
+class KeyIn(BaseModel):
+    provider: str   # "mistral" | "agnes"
+    key: str
+
+@router.post("/save")
+async def save(payload: KeyIn):
+    if payload.provider not in ("mistral", "agnes"):
+        raise HTTPException(400, "Fournisseur inconnu")
+
+    ok = await verify_key(payload.provider, payload.key)
+    if not ok:
+        raise HTTPException(401, f"Clé {payload.provider} invalide ou non autorisée")
+
+    db = SessionLocal()
+    row = db.query(ApiKey).filter_by(provider=payload.provider).first()
+    if row:
+        row.encrypted = encrypt(payload.key)
+        row.verified_at = datetime.utcnow()
+    else:
+        db.add(ApiKey(provider=payload.provider,
+                      encrypted=encrypt(payload.key),
+                      verified_at=datetime.utcnow()))
+    db.commit(); db.close()
+
+    return {
+        "status": "ok",
+        "provider": payload.provider,
+        "masked": mask(payload.key),
+        "message": f"✅ Clé {payload.provider} vérifiée et enregistrée."
+    }
+
+@router.get("/status")
+def status():
+    db = SessionLocal()
+    rows = db.query(ApiKey).all()
+    db.close()
+    return {r.provider: {"masked": mask("xxxx"), "verified_at": r.verified_at} for r in rows}
+routes/documents.py
+python
+from fastapi import APIRouter, UploadFile, File, Form
+from pathlib import Path
+import shutil, uuid
+from config import UPLOAD_DIR
+from database import SessionLocal, Document
+from ingestion import extract_text, chunk
+from vector_store import index_chunks
+
+router = APIRouter(prefix="/api/documents")
+ALLOWED = {".pdf", ".docx", ".txt", ".png", ".jpg", ".jpeg"}
+
+@router.post("/upload")
+async def upload(file: UploadFile = File(...), title: str = Form(...), subject: str = Form("général")):
+    ext = Path(file.filename).suffix.lower()
+    if ext not in ALLOWED:
+        return {"error": f"Format {ext} non supporté"}
+    dest = UPLOAD_DIR / f"{uuid.uuid4().hex}{ext}"
+    with dest.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    text = extract_text(dest)
+    chunks = chunk(text)
+
+    db = SessionLocal()
+    doc = Document(title=title, subject=subject, kind=ext[1:], path=str(dest), text=text[:200_000])
+    db.add(doc); db.commit(); db.refresh(doc)
+    index_chunks(doc.id, title, chunks)
+    db.close()
+
+    return {"id": doc.id, "title": title, "chunks": len(chunks),
+            "message": f"📚 '{title}' importé ({len(chunks)} segments indexés)."}
+routes/chat.py
+python
+from fastapi import APIRouter
+from pydantic import BaseModel
+from agents import run_pipeline
+
+router = APIRouter(prefix="/api/chat")
+
+class Ask(BaseModel):
+    question: str
+    provider: str = "mistral"
+
+@router.post("/ask")
+async def ask(payload: Ask):
+    events = await run_pipeline(payload.question, payload.provider)
+    return {"events": [{"type": t, "content": c} for t, c in events]}
+main.py
+python
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from routes import documents, api_keys, chat
+
+app = FastAPI(title="Aide au Devoir")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+app.include_router(documents.router)
+app.include_router(api_keys.router)
+app.include_router(chat.router)
+
+@app.get("/")
+def root(): return {"status": "ok"}
+5. Le pipeline d'agents expliqué
+Les agents « disent quand ils sont prêts » grâce à un état observable (SSE ou WebSocket). Exemple côté frontend :
+
+text
+[Planificateur] ⏳ ... ✅ prêt
+[Chercheur]     ⏳ 12 chunks trouvés ... ✅ prêt
+[Solveur]       ⏳ génération ... ✅ prêt
+[Tuteur]        ⏳ ... ✅ prêt
+→ Réponse finale affichée
+Tu peux exposer run_pipeline en Server-Sent Events :
+
+python
+from fastapi.responses import StreamingResponse
+import json
+
+@router.post("/ask/stream")
+async def ask_stream(payload: Ask):
+    async def gen():
+        # adapte run_pipeline pour yield après chaque étape
+        for step, content in await run_pipeline(payload.question, payload.provider):
+            yield f"data: {json.dumps({'step': step, 'content': content}, ensure_ascii=False)}\n\n"
+    return StreamingResponse(gen(), media_type="text/event-stream")
+6. Frontend — 3 écrans clés
+a) settings/page.tsx — clés API
+tsx
+"use client";
+import { useState } from "react";
+
+export default function Settings() {
+  const [provider, setProvider] = useState("mistral");
+  const [key, setKey] = useState("");
+  const [status, setStatus] = useState<any>(null);
+
+  async function save() {
+    const r = await fetch("http://localhost:8000/api/keys/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider, key }),
+    });
+    setStatus(await r.json());
+  }
+
+  return (
+    <div className="p-8 max-w-lg mx-auto space-y-4">
+      <h1 className="text-2xl font-bold">🔑 Clés API</h1>
+      <select value={provider} onChange={e => setProvider(e.target.value)}
+              className="border p-2 rounded w-full">
+        <option value="mistral">Mistral</option>
+        <option value="agnes">Agnes</option>
+      </select>
+      <input type="password" value={key} onChange={e => setKey(e.target.value)}
+             placeholder="sk-..." className="border p-2 rounded w-full" />
+      <button onClick={save} className="bg-blue-600 text-white px-4 py-2 rounded">
+        Vérifier & enregistrer
+      </button>
+      {status && (
+        <div className={status.status === "ok" ? "text-green-600" : "text-red-600"}>
+          {status.message || status.detail}
+        </div>
+      )}
+    </div>
+  );
+}
+b) upload/page.tsx
+tsx
+"use client";
+import { useState } from "react";
+
+export default function Upload() {
+  const [title, setTitle] = useState("");
+  const [subject, setSubject] = useState("général");
+  const [file, setFile] = useState<File | null>(null);
+  const [msg, setMsg] = useState("");
+
+  async function send() {
+    if (!file || !title) return setMsg("Titre et fichier requis");
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("title", title);
+    fd.append("subject", subject);
+    const r = await fetch("http://localhost:8000/api/documents/upload", { method: "POST", body: fd });
+    const j = await r.json();
+    setMsg(j.message || JSON.stringify(j));
+  }
+
+  return (
+    <div className="p-8 max-w-lg mx-auto space-y-3">
+      <h1 className="text-2xl font-bold">📚 Importer un cours</h1>
+      <input placeholder="Titre (ex: Maths – Chapitre 3)" value={title}
+             onChange={e => setTitle(e.target.value)} className="border p-2 rounded w-full" />
+      <input placeholder="Matière" value={subject}
+             onChange={e => setSubject(e.target.value)} className="border p-2 rounded w-full" />
+      <input type="file" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg"
+             onChange={e => setFile(e.target.files?.[0] || null)} />
+      <button onClick={send} className="bg-emerald-600 text-white px-4 py-2 rounded">Importer</button>
+      {msg && <p>{msg}</p>}
+    </div>
+  );
+}
+c) chat/page.tsx (avec indicateurs d'agents)
+tsx
+"use client";
+import { useState } from "react";
+
+const STEPS = ["plan", "retrieval", "answer", "tutor"];
+const LABELS: any = { plan: "🧭 Planificateur", retrieval: "🔍 Chercheur",
+                      answer: "✍️ Solveur", tutor: "👨‍🏫 Tuteur" };
+
+export default function Chat() {
+  const [q, setQ] = useState("");
+  const [provider, setProvider] = useState("mistral");
+  const [events, setEvents] = useState<any[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  async function ask() {
+    setBusy(true); setEvents([]);
+    const r = await fetch("http://localhost:8000/api/chat/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: q, provider }),
+    });
+    const j = await r.json();
+    setEvents(j.events); setBusy(false);
+  }
+
+  return (
+    <div className="p-8 max-w-3xl mx-auto space-y-4">
+      <h1 className="text-2xl font-bold">💬 Poser une question</h1>
+      <div className="flex gap-2">
+        <input value={q} onChange={e => setQ(e.target.value)}
+               className="border p-2 rounded flex-1"
+               placeholder="Ex : Explique la dérivée d'une fonction composée" />
+        <select value={provider} onChange={e => setProvider(e.target.value)}
+                className="border p-2 rounded">
+          <option value="mistral">Mistral</option>
+          <option value="agnes">Agnes</option>
+        </select>
+        <button onClick={ask} disabled={busy}
+                className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50">
+          {busy ? "..." : "Envoyer"}
+        </button>
+      </div>
+      <div className="space-y-3">
+        {events.map((e, i) => (
+          <div key={i} className="border-l-4 border-blue-500 pl-3">
+            <div className="text-xs text-gray-500">{LABELS[e.type] || e.type} ✅ prêt</div>
+            <pre className="whitespace-pre-wrap text-sm">
+              {typeof e.content === "string" ? e.content : JSON.stringify(e.content, null, 2)}
+            </pre>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+7. Flux utilisateur complet (comme tu le décris)
+Import → l'utilisateur glisse ses PDF/images/DOCX avec un titre → backend extrait texte + OCR → chunks indexés dans ChromaDB.
+
+Agents → l'UI affiche l'état : "Planificateur prêt ✅ / Chercheur : 6 passages trouvés ✅ / Solveur prêt ✅ / Tuteur prêt ✅".
+
+Clés API → l'utilisateur colle sa clé Mistral (et/ou Agnes) → POST /api/keys/save → vérification en direct auprès du provider → confirmation « ✅ Clé vérifiée et enregistrée (sk-…4f2a) ».
+
+Questions → tirées des cours (RAG), de l'actualité (ajoute un WebSearchAgent via Tavily/Brave), ou de livres importés → même pipeline.
+
+Réponses → étapes numérotées, citations des passages du cours, questions de vérification.
+
+8. Pour aller plus loin
+SSE/WebSocket pour voir chaque agent s'activer en temps réel (pas d'attente globale).
+
+WebSearchAgent (Tavily API) pour « questions d'actualité ».
+
+Multi-utilisateurs : ajoute user_id sur Document/ApiKey + JWT.
+
+Multi-agents parallèles (asyncio.gather) pour diviser une longue question en sous-questions.
+
+Import en masse : dossier drag-and-drop → boucle sur /api/documents/upload.
+
+Export PDF de la réponse finale pour l'élève.
+
+9. Lancer
+bash
+# backend
+cd backend
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+sudo apt install tesseract-ocr tesseract-ocr-fra   # pour OCR
+export MASTER_KEY="$(openssl rand -base64 32)"
+uvicorn main:app --reload --port 8000
+
+# frontend
+cd frontend
+npm install
+npm run dev      # http://localhost:3000
+Veux-tu que je te fournisse :
+
+A) une version SSE temps réel avec affichage agent par agent qui s'allume,
+
+B) l'ajout du WebSearchAgent (actualité) via Tavily,
+
+C) la doc exacte de l'API Agnes (donne-moi l'URL) pour brancher proprement le PROVIDERS["agnes"],
+
+D) le passage en Next.js + shadcn/ui complet ?
+
+Dis-moi lequel on attaque et je code la suite.
+
+A, C et D. Pour le B, on le mettra ulterieurement le temps de creer la clé API
+The user wants A (SSE real-time), C (Agnes API integration - but I need the URL, let me ask or provide a flexible adapter), and D (Next.js + shadcn/ui complete).
+
+Let me deliver all three. For C, since I don't have the exact Agnes API docs, I'll build a flexible adapter that can be configured via env vars or settings, and ask the user to provide the URL.
+
+Let me structure this properly:
+
+A) SSE temps réel - Backend streaming + frontend EventSource
+
+C) Adaptateur Agnes flexible - configurable provider with OpenAI-compatible interface
+
+D) Next.js + shadcn/ui complet
+
+Let me write comprehensive code.
+
+For D, I'll build a proper Next.js 14 App Router project with shadcn/ui. I'll include the key components and pages.
+
+Let me be organized and produce quality code.
+
+Structure:
+
+text
+aide-devoir/
+├── backend/
+│   ├── main.py
+│   ├── config.py
+│   ├── security.py
+│   ├── database.py
+│   ├── ingestion.py
+│   ├── vector_store.py
+│   ├── providers/
+│   │   ├── __init__.py
+│   │   ├── base.py
+│   │   ├── mistral.py
+│   │   ├── agnes.py
+│   │   └── registry.py
+│   ├── llm_router.py
+│   ├── agents.py
+│   ├── events.py              # SSE bus
+│   └── routes/
+│       ├── documents.py
+│       ├── api_keys.py
+│       └── chat.py
+└── frontend/
+    ├── app/
+    │   ├── layout.tsx
+    │   ├── page.tsx
+    │   ├── documents/page.tsx
+    │   ├── settings/page.tsx
+    │   └── chat/page.tsx
+    ├── components/
+    │   ├── ui/                # shadcn
+    │   ├── agent-timeline.tsx
+    │   ├── file-upload.tsx
+    │   ├── api-key-form.tsx
+    │   └── chat-stream.tsx
+    ├── lib/
+    │   ├── api.ts
+    │   ├── sse.ts
+    │   └── utils.ts
+    ├── tailwind.config.ts
+    └── package.json
+Let me write it.
+
+For SSE, I'll use an async generator approach with a queue that agents push to.
+
+Let me write the streaming pipeline properly.
+
+python
+# events.py
+import asyncio, json
+from typing import AsyncIterator
+
+class EventBus:
+    def __init__(self):
+        self.queue: asyncio.Queue = asyncio.Queue()
+    
+    async def emit(self, type_: str, data: dict):
+        await self.queue.put({"type": type_, "data": data})
+    
+    async def stream(self) -> AsyncIterator[dict]:
+        while True:
+            ev = await self.queue.get()
+            if ev["type"] == "__end__":
+                break
+            yield ev
+    
+    async def end(self):
+        await self.queue.put({"type": "__end__", "data": {}})
+Then in the pipeline:
+
+python
+async def run_pipeline_stream(question: str, provider: str) -> AsyncIterator[dict]:
+    bus = EventBus()
+    
+    async def worker():
+        try:
+            await bus.emit("agent.start", {"agent": "planner", "label": "Planificateur"})
+            plan = await PlannerAgent(provider).run(question)
+            await bus.emit("agent.done", {"agent": "planner", "content": plan})
+            
+            await bus.emit("agent.start", {"agent": "retriever", "label": "Chercheur"})
+            hits = RetrieverAgent(provider).run(question)
+            await bus.emit("agent.done", {"agent": "retriever", "content": [...]})
+            
+            # ...
+        finally:
+            await bus.end()
+    
+    asyncio.create_task(worker())
+    async for ev in bus.stream():
+        yield ev
+Then FastAPI endpoint returns StreamingResponse with format event: {type}\ndata: {json}\n\n.
+
+For Agnes, since I don't know the exact API, I'll build a flexible OpenAI-compatible adapter and note that the user should provide the base_url, model, and test path. I'll add a "custom" provider option that's easy to configure.
+
+Actually, let me build a provider registry pattern:
+
+python
+# providers/base.py
+from abc import ABC, abstractmethod
+
+class LLMProvider(ABC):
+    name: str
+    @abstractmethod
+    async def verify(self, key: str) -> tuple[bool, str]: ...
+    @abstractmethod
+    async def chat(self, key: str, messages: list[dict], **kwargs) -> str: ...
+    @abstractmethod
+    async def embed(self, key: str, texts: list[str]) -> list[list[float]]: ...
+Then Mistral and Agnes implement it.
+
+Since Agnes API details are unknown, I'll:
+
+Build the adapter with env-var config (AGNES_BASE_URL, AGNES_MODEL, AGNES_TEST_PATH)
+
+Give the user a template and instructions to fill in once they have the docs
+
+Include commented examples of the most common patterns (OpenAI-compatible, Anthropic-compatible)
+
+OK let me write everything out. I'll be thorough but not overly verbose.
+
+For the frontend, I'll:
+
+Show the key shadcn components needed
+
+Build the pages properly
+
+Use EventSource with fetch (since EventSource doesn't support POST)
+
+Actually, EventSource only supports GET. For POST I need to use fetch with ReadableStream parsing. Let me write a helper for that.
+
+typescript
+// lib/sse.ts
+export async function sseStream(url: string, body: any, onEvent: (type: string, data: any) => void, onEnd: () => void) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    
+    let idx;
+    while ((idx = buffer.indexOf("\n\n")) !== -1) {
+      const chunk = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      
+      let eventType = "message";
+      let dataLines: string[] = [];
+      for (const line of chunk.split("\n")) {
+        if (line.startsWith("event:")) eventType = line.slice(6).trim();
+        else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+      }
+      if (dataLines.length) {
+        onEvent(eventType, JSON.parse(dataLines.join("\n")));
+      }
+    }
+  }
+  onEnd();
+}
+OK, let me write the whole thing. I'll keep it focused and readable.
+
+Let me also add the shadcn components I'm using - Button, Card, Input, Select, Textarea, Badge, Progress, Tabs, etc. I'll show the command to install them.
+
+Let me write the final response now. I'll structure as:
+
+Overview of changes
+
+Backend updates (providers, SSE)
+
+Frontend full setup (Next.js + shadcn)
+
+Instructions to run
+
+Question about Agnes URL
+
+Let me get into the code.
+
+🚀 A + C + D — Streaming SSE, Adaptateur Agnes, Frontend Next.js + shadcn/ui
+On garde l'architecture précédente, on refait proprement les 3 blocs demandés.
+
+📁 Nouvelle structure
+text
+aide-devoir/
+├── backend/
+│   ├── main.py
+│   ├── config.py
+│   ├── security.py
+│   ├── database.py
+│   ├── ingestion.py                 (inchangé)
+│   ├── vector_store.py              (inchangé)
+│   ├── events.py                    ← NOUVEAU : bus SSE
+│   ├── agents.py                    ← REFONTE : version streaming
+│   ├── llm_router.py                ← REFONTE : utilise providers/
+│   ├── providers/                   ← NOUVEAU
+│   │   ├── __init__.py
+│   │   ├── base.py
+│   │   ├── mistral.py
+│   │   ├── agnes.py
+│   │   └── registry.py
+│   └── routes/
+│       ├── documents.py
+│       ├── api_keys.py
+│       └── chat.py                  ← SSE
+└── frontend/                        ← NEXT.JS + SHADCN COMPLET
+    ├── package.json
+    ├── next.config.mjs
+    ├── tailwind.config.ts
+    ├── tsconfig.json
+    ├── app/
+    │   ├── layout.tsx
+    │   ├── globals.css
+    │   ├── page.tsx                 (dashboard)
+    │   ├── documents/page.tsx
+    │   ├── chat/page.tsx
+    │   └── settings/page.tsx
+    ├── components/
+    │   ├── ui/                      (shadcn)
+    │   ├── nav-bar.tsx
+    │   ├── agent-timeline.tsx
+    │   ├── file-upload.tsx
+    │   ├── api-key-form.tsx
+    │   └── chat-stream.tsx
+    └── lib/
+        ├── api.ts
+        ├── sse.ts
+        └── utils.ts
+🅐 — Streaming SSE (agent par agent)
+backend/events.py
+python
+import asyncio
+from typing import AsyncIterator, Callable, Any
+
+class EventBus:
+    """Bus d'événements asyncio pour pousser des messages SSE depuis les agents."""
+    def __init__(self):
+        self._queue: asyncio.Queue[dict] = asyncio.Queue()
+        self._closed = False
+
+    async def emit(self, event: str, data: dict):
+        if self._closed:
+            return
+        await self._queue.put({"event": event, "data": data})
+
+    async def close(self):
+        if self._closed:
+            return
+        self._closed = True
+        await self._queue.put({"event": "__end__", "data": {}})
+
+    async def stream(self) -> AsyncIterator[dict]:
+        while True:
+            ev = await self._queue.get()
+            if ev["event"] == "__end__":
+                break
+            yield ev
+
+    @staticmethod
+    def format_sse(event: str, data: dict) -> str:
+        import json
+        return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+backend/agents.py (version streaming)
+python
+import asyncio
+from typing import AsyncIterator
+from vector_store import search
+from llm_router import chat
+from events import EventBus
+
+
+class BaseAgent:
+    id: str = "agent"
+    label: str = "Agent"
+
+    def __init__(self, provider: str, bus: EventBus):
+        self.provider = provider
+        self.bus = bus
+
+    async def _start(self, **extra):
+        await self.bus.emit("agent.start", {"id": self.id, "label": self.label, **extra})
+
+    async def _done(self, summary: str, **payload):
+        await self.bus.emit("agent.done", {"id": self.id, "label": self.label,
+                                           "summary": summary, **payload})
+
+    async def _log(self, message: str):
+        await self.bus.emit("agent.log", {"id": self.id, "message": message})
+
+
+class PlannerAgent(BaseAgent):
+    id, label = "planner", "🧭 Planificateur"
+
+    async def run(self, question: str) -> str:
+        await self._start()
+        await self._log("Décomposition de la question…")
+        plan = await chat(self.provider, [
+            {"role": "system", "content":
+             "Tu es un planificateur pédagogique. Décompose la question en 3 sous-tâches "
+             "maximum, en français, sous forme de puces très courtes."},
+            {"role": "user", "content": question},
+        ], temperature=0.2)
+        await self._done("Plan établi", plan=plan)
+        return plan
+
+
+class RetrieverAgent(BaseAgent):
+    id, label = "retriever", "🔍 Chercheur"
+
+    async def run(self, question: str, k: int = 6):
+        await self._start()
+        await self._log(f"Recherche dans les cours (top {k})…")
+        hits = search(question, k=k)
+        if not hits:
+            await self._log("Aucun passage pertinent trouvé dans les cours indexés.")
+        else:
+            await self._log(f"{len(hits)} passages retenus.")
+        # Stream les passages un par un
+        for i, h in enumerate(hits):
+            await self.bus.emit("retrieval.hit", {
+                "index": i,
+                "title": h["meta"].get("title"),
+                "score": round(h["score"], 3),
+                "preview": h["text"][:180] + ("…" if len(h["text"]) > 180 else ""),
+            })
+        await self._done(f"{len(hits)} passages", hits=[h["meta"] for h in hits])
+        return hits
+
+
+class SolverAgent(BaseAgent):
+    id, label = "solver", "✍️ Solveur"
+
+    async def run(self, question: str, context: str, plan: str) -> str:
+        await self._start()
+        await self._log("Rédaction de la réponse étape par étape…")
+        # Token par token si le provider le supporte ; sinon réponse d'un bloc
+        answer = await chat(self.provider, [
+            {"role": "system", "content":
+             "Tu es un professeur particulier. Réponds en français, étape par étape. "
+             "Cite les passages du cours entre <cite>...</cite>. Si une info manque, dis-le."},
+            {"role": "user", "content":
+             f"<cours>\n{context}\n</cours>\n\nPlan:\n{plan}\n\nQuestion: {question}"},
+        ], temperature=0.3, stream_cb=self._stream_token)
+        await self._done("Réponse rédigée", answer=answer)
+        return answer
+
+    async def _stream_token(self, token: str):
+        await self.bus.emit("answer.token", {"token": token})
+
+
+class TutorAgent(BaseAgent):
+    id, label = "tutor", "👨‍🏫 Tuteur"
+
+    async def run(self, question: str, answer: str) -> str:
+        await self._start()
+        await self._log("Préparation des questions de vérification…")
+        tuto = await chat(self.provider, [
+            {"role": "system", "content":
+             "Reformule la réponse pour un élève de lycée. Ajoute 2 questions de vérification "
+             "et 1 exercice d'application. Format Markdown."},
+            {"role": "user", "content": f"Question: {question}\n\nRéponse brute:\n{answer}"},
+        ], temperature=0.4)
+        await self._done("Fiche élève prête", tutor=tuto)
+        return tuto
+
+
+async def run_pipeline_stream(question: str, provider: str) -> AsyncIterator[dict]:
+    """Pipeline complet avec streaming d'événements SSE."""
+    bus = EventBus()
+
+    async def worker():
+        try:
+            await bus.emit("pipeline.start", {"question": question, "provider": provider})
+
+            plan = await PlannerAgent(provider, bus).run(question)
+
+            hits = await RetrieverAgent(provider, bus).run(question)
+            context = "\n---\n".join(h["text"] for h in hits) or "(aucun cours pertinent)"
+
+            answer = await SolverAgent(provider, bus).run(question, context, plan)
+
+            await TutorAgent(provider, bus).run(question, answer)
+
+            await bus.emit("pipeline.done", {"answer": answer})
+        except Exception as e:
+            await bus.emit("pipeline.error", {"message": str(e)})
+        finally:
+            await bus.close()
+
+    task = asyncio.create_task(worker())
+    async for ev in bus.stream():
+        yield ev
+    await task
+backend/routes/chat.py
+python
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from agents import run_pipeline_stream
+from events import EventBus
+
+router = APIRouter(prefix="/api/chat")
+
+
+class Ask(BaseModel):
+    question: str
+    provider: str = "mistral"
+
+
+@router.post("/ask/stream")
+async def ask_stream(payload: Ask):
+    async def gen():
+        # Petit keep-alive pour éviter que les proxies coupent
+        yield ": ping\n\n"
+        async for ev in run_pipeline_stream(payload.question, payload.provider):
+            yield EventBus.format_sse(ev["event"], ev["data"])
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",   # désactive le buffering nginx
+            "Connection": "keep-alive",
+        },
+    )
+🅒 — Adaptateur providers (Mistral + Agnes générique)
+⚠️ Je ne connais pas encore la doc exacte de l'API Agnes. Je t'ai donc préparé un adaptateur générique configurable par variables d'environnement. Dès que tu me donnes l'URL + un exemple de curl, on remplit 4 lignes et c'est bouclé.
+
+backend/providers/base.py
+python
+from abc import ABC, abstractmethod
+from typing import Callable, Awaitable
+
+
+class LLMProvider(ABC):
+    name: str
+
+    @abstractmethod
+    async def verify(self, key: str) -> tuple[bool, str]:
+        """Retourne (ok, message_utilisateur)."""
+
+    @abstractmethod
+    async def chat(
+        self,
+        key: str,
+        messages: list[dict],
+        *,
+        temperature: float = 0.3,
+        stream_cb: Callable[[str], Awaitable[None]] | None = None,
+    ) -> str: ...
+
+    async def embed(self, key: str, texts: list[str]) -> list[list[float]]:
+        """Optionnel : par défaut, on utilise le modèle local."""
+        raise NotImplementedError
+backend/providers/mistral.py
+python
+import json
+import httpx
+from .base import LLMProvider
+
+BASE = "https://api.mistral.ai/v1"
+
+
+class MistralProvider(LLMProvider):
+    name = "mistral"
+
+    async def verify(self, key: str):
+        try:
+            async with httpx.AsyncClient(timeout=15) as c:
+                r = await c.get(f"{BASE}/models",
+                                headers={"Authorization": f"Bearer {key}"})
+            if r.status_code == 200:
+                return True, "Clé Mistral valide ✅"
+            if r.status_code == 401:
+                return False, "Clé Mistral refusée (401). Vérifie la clé."
+            return False, f"Mistral a répondu {r.status_code}"
+        except Exception as e:
+            return False, f"Erreur réseau Mistral : {e}"
+
+    async def chat(self, key, messages, *, temperature=0.3, stream_cb=None):
+        url = f"{BASE}/chat/completions"
+        headers = {"Authorization": f"Bearer {key}"}
+        body = {
+            "model": "mistral-large-latest",
+            "messages": messages,
+            "temperature": temperature,
+        }
+
+        if stream_cb is None:
+            async with httpx.AsyncClient(timeout=120) as c:
+                r = await c.post(url, headers=headers, json=body)
+                r.raise_for_status()
+                return r.json()["choices"][0]["message"]["content"]
+
+        # --- Mode streaming token par token
+        body["stream"] = True
+        full = []
+        async with httpx.AsyncClient(timeout=180) as c:
+            async with c.stream("POST", url, headers=headers, json=body) as r:
+                r.raise_for_status()
+                async for line in r.aiter_lines():
+                    if not line or not line.startswith("data:"):
+                        continue
+                    payload = line[5:].strip()
+                    if payload == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(payload)
+                    except json.JSONDecodeError:
+                        continue
+                    delta = chunk["choices"][0]["delta"].get("content", "")
+                    if delta:
+                        full.append(delta)
+                        await stream_cb(delta)
+        return "".join(full)
+backend/providers/agnes.py
+python
+"""
+Adaptateur Agnes — générique, basé sur une API compatible OpenAI.
+
+Variables d'environnement (à renseigner dès qu'on a la doc) :
+    AGNES_BASE_URL   ex: https://api.agnes.ai/v1
+    AGNES_MODEL      ex: agnes-chat-large
+    AGNES_TEST_PATH  ex: /models          (endpoint GET pour vérifier la clé)
+    AGNES_AUTH_STYLE ex: "bearer" | "x-api-key" | "query"
+
+Exemple .env :
+    AGNES_BASE_URL=https://api.agnes.ai/v1
+    AGNES_MODEL=agnes-chat-large
+    AGNES_TEST_PATH=/models
+    AGNES_AUTH_STYLE=bearer
+"""
+import os
+import json
+import httpx
+from .base import LLMProvider
+
+BASE_URL = os.getenv("AGNES_BASE_URL", "").rstrip("/")
+MODEL = os.getenv("AGNES_MODEL", "agnes-chat")
+TEST_PATH = os.getenv("AGNES_TEST_PATH", "/models")
+AUTH_STYLE = os.getenv("AGNES_AUTH_STYLE", "bearer")
+
+
+def _headers(key: str) -> dict:
+    if AUTH_STYLE == "x-api-key":
+        return {"x-api-key": key, "Content-Type": "application/json"}
+    return {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+
+
+class AgnesProvider(LLMProvider):
+    name = "agnes"
+
+    async def verify(self, key: str):
+        if not BASE_URL:
+            return False, ("Agnes non configuré côté serveur. "
+                           "Renseigne AGNES_BASE_URL dans .env.")
+        try:
+            async with httpx.AsyncClient(timeout=15) as c:
+                r = await c.get(f"{BASE_URL}{TEST_PATH}", headers=_headers(key))
+            if r.status_code == 200:
+                return True, "Clé Agnes valide ✅"
+            if r.status_code in (401, 403):
+                return False, "Clé Agnes refusée. Vérifie la clé."
+            return False, f"Agnes a répondu {r.status_code}"
+        except Exception as e:
+            return False, f"Erreur réseau Agnes : {e}"
+
+    async def chat(self, key, messages, *, temperature=0.3, stream_cb=None):
+        if not BASE_URL:
+            raise RuntimeError("AGNES_BASE_URL non configuré.")
+        url = f"{BASE_URL}/chat/completions"
+        body = {"model": MODEL, "messages": messages, "temperature": temperature}
+
+        if stream_cb is None:
+            async with httpx.AsyncClient(timeout=120) as c:
+                r = await c.post(url, headers=_headers(key), json=body)
+                r.raise_for_status()
+                return r.json()["choices"][0]["message"]["content"]
+
+        body["stream"] = True
+        full = []
+        async with httpx.AsyncClient(timeout=180) as c:
+            async with c.stream("POST", url, headers=_headers(key), json=body) as r:
+                r.raise_for_status()
+                async for line in r.aiter_lines():
+                    if not line or not line.startswith("data:"):
+                        continue
+                    payload = line[5:].strip()
+                    if payload == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(payload)
+                        delta = chunk["choices"][0]["delta"].get("content", "")
+                        if delta:
+                            full.append(delta)
+                            await stream_cb(delta)
+                    except Exception:
+                        continue
+        return "".join(full)
+backend/providers/registry.py
+python
+from .base import LLMProvider
+from .mistral import MistralProvider
+from .agnes import AgnesProvider
+
+_PROVIDERS: dict[str, LLMProvider] = {
+    "mistral": MistralProvider(),
+    "agnes": AgnesProvider(),
+}
+
+def get_provider(name: str) -> LLMProvider:
+    if name not in _PROVIDERS:
+        raise ValueError(f"Provider inconnu : {name}")
+    return _PROVIDERS[name]
+
+def list_providers() -> list[str]:
+    return list(_PROVIDERS.keys())
+backend/llm_router.py (simplifié)
+python
+from database import SessionLocal, ApiKey
+from security import decrypt
+from providers.registry import get_provider
+
+
+def get_user_key(provider: str) -> str | None:
+    db = SessionLocal()
+    row = db.query(ApiKey).filter_by(provider=provider).first()
+    db.close()
+    return decrypt(row.encrypted) if row else None
+
+
+async def verify_key(provider: str, key: str) -> tuple[bool, str]:
+    return await get_provider(provider).verify(key)
+
+
+async def chat(provider_name: str, messages, *, temperature=0.3, stream_cb=None) -> str:
+    key = get_user_key(provider_name)
+    if not key:
+        raise RuntimeError(f"Clé {provider_name} non configurée.")
+    return await get_provider(provider_name).chat(
+        key, messages, temperature=temperature, stream_cb=stream_cb
+    )
+backend/routes/api_keys.py (mise à jour)
+python
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from datetime import datetime
+from database import SessionLocal, ApiKey
+from security import encrypt, mask
+from providers.registry import list_providers, get_provider
+
+router = APIRouter(prefix="/api/keys")
+
+
+class KeyIn(BaseModel):
+    provider: str
+    key: str
+
+
+@router.get("/providers")
+def providers():
+    return {"providers": list_providers()}
+
+
+@router.post("/save")
+async def save(payload: KeyIn):
+    if payload.provider not in list_providers():
+        raise HTTPException(400, "Fournisseur inconnu")
+
+    ok, msg = await get_provider(payload.provider).verify(payload.key)
+    if not ok:
+        raise HTTPException(401, msg)
+
+    db = SessionLocal()
+    row = db.query(ApiKey).filter_by(provider=payload.provider).first()
+    if row:
+        row.encrypted = encrypt(payload.key)
+        row.verified_at = datetime.utcnow()
+    else:
+        db.add(ApiKey(provider=payload.provider,
+                      encrypted=encrypt(payload.key),
+                      verified_at=datetime.utcnow()))
+    db.commit()
+    db.close()
+
+    return {
+        "status": "ok",
+        "provider": payload.provider,
+        "masked": mask(payload.key),
+        "message": f"✅ {msg} — clé {payload.provider} enregistrée ({mask(payload.key)}).",
+    }
+
+
+@router.get("/status")
+def status():
+    db = SessionLocal()
+    rows = db.query(ApiKey).all()
+    db.close()
+    return {
+        r.provider: {
+            "configured": True,
+            "verified_at": r.verified_at.isoformat() if r.verified_at else None,
+        } for r in rows
+    }
+🅓 — Frontend Next.js 14 + shadcn/ui
+Initialisation
+bash
+npx create-next-app@latest frontend --typescript --tailwind --app --eslint --src-dir=false
+cd frontend
+npx shadcn@latest init    # style: "New York", base color: "Slate", CSS vars: yes
+npx shadcn@latest add button card input select textarea badge separator scroll-area progress tabs sonner alert skeleton
+npm i lucide-react
+frontend/.env.local
+text
+NEXT_PUBLIC_API_URL=http://localhost:8000
+frontend/lib/api.ts
+ts
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+export type Provider = "mistral" | "agnes";
+
+export const api = {
+  async uploadDocument(form: FormData) {
+    const r = await fetch(`${API}/api/documents/upload`, { method: "POST", body: form });
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  },
+  async listDocuments() {
+    const r = await fetch(`${API}/api/documents/`);
+    return r.json();
+  },
+  async providers() {
+    const r = await fetch(`${API}/api/keys/providers`);
+    return r.json();
+  },
+  async saveKey(provider: Provider, key: string) {
+    const r = await fetch(`${API}/api/keys/save`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider, key }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail ?? "Erreur inconnue");
+    return j;
+  },
+  async keysStatus() {
+    const r = await fetch(`${API}/api/keys/status`);
+    return r.json();
+  },
+};
+frontend/lib/sse.ts — POST + SSE streaming
+ts
+export type SseHandler = (event: string, data: any) => void;
+
+export async function sseStream(
+  url: string,
+  body: any,
+  onEvent: SseHandler,
+  signal?: AbortSignal,
+) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok || !res.body) throw new Error(`SSE HTTP ${res.status}`);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let idx: number;
+    while ((idx = buffer.indexOf("\n\n")) !== -1) {
+      const raw = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+
+      let event = "message";
+      const dataLines: string[] = [];
+      for (const line of raw.split("\n")) {
+        if (line.startsWith(":")) continue;            // keep-alive
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+      }
+      if (!dataLines.length) continue;
+      try {
+        onEvent(event, JSON.parse(dataLines.join("\n")));
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+frontend/components/nav-bar.tsx
+tsx
+"use client";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { BookOpen, MessageSquare, Settings, GraduationCap } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+const items = [
+  { href: "/", label: "Tableau de bord", icon: GraduationCap },
+  { href: "/documents", label: "Cours", icon: BookOpen },
+  { href: "/chat", label: "Questions", icon: MessageSquare },
+  { href: "/settings", label: "Clés API", icon: Settings },
+];
+
+export function NavBar() {
+  const pathname = usePathname();
+  return (
+    <nav className="border-b bg-background">
+      <div className="container flex h-14 items-center gap-6">
+        <span className="font-bold">🎓 Aide au Devoir</span>
+        <div className="flex gap-1">
+          {items.map(({ href, label, icon: Icon }) => (
+            <Link
+              key={href}
+              href={href}
+              className={cn(
+                "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors",
+                pathname === href
+                  ? "bg-secondary text-secondary-foreground"
+                  : "text-muted-foreground hover:bg-secondary/50",
+              )}
+            >
+              <Icon className="h-4 w-4" />
+              {label}
+            </Link>
+          ))}
+        </div>
+      </div>
+    </nav>
+  );
+}
+frontend/app/layout.tsx
+tsx
+import "./globals.css";
+import { NavBar } from "@/components/nav-bar";
+import { Toaster } from "@/components/ui/sonner";
+
+export const metadata = { title: "Aide au Devoir", description: "Assistant scolaire RAG" };
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="fr">
+      <body className="min-h-screen bg-background text-foreground antialiased">
+        <NavBar />
+        <main className="container py-8">{children}</main>
+        <Toaster richColors position="top-right" />
+      </body>
+    </html>
+  );
+}
+frontend/components/api-key-form.tsx
+tsx
+"use client";
+import { useEffect, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { api, Provider } from "@/lib/api";
+import { toast } from "sonner";
+import { CheckCircle2, Loader2, ShieldCheck } from "lucide-react";
+
+export function ApiKeyForm() {
+  const [provider, setProvider] = useState<Provider>("mistral");
+  const [key, setKey] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<Record<string, any>>({});
+
+  useEffect(() => { api.keysStatus().then(setStatus); }, []);
+
+  async function handleSave() {
+    if (!key.trim()) return toast.error("Colle une clé avant d'enregistrer.");
+    setLoading(true);
+    try {
+      const res = await api.saveKey(provider, key.trim());
+      toast.success(res.message ?? "Clé enregistrée");
+      setKey("");
+      setStatus(await api.keysStatus());
+    } catch (e: any) {
+      toast.error(e.message ?? "Échec de la vérification");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <ShieldCheck className="h-5 w-5" /> Clés API
+        </CardTitle>
+        <CardDescription>
+          Les clés sont chiffrées côté serveur et vérifiées en direct auprès du fournisseur.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-[160px_1fr] gap-3">
+          <Select value={provider} onValueChange={(v) => setProvider(v as Provider)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="mistral">Mistral</SelectItem>
+              <SelectItem value="agnes">Agnes</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input
+            type="password"
+            placeholder="sk-..."
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSave()}
+          />
+        </div>
+
+        <Button onClick={handleSave} disabled={loading} className="w-full">
+          {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Vérification…</> : "Vérifier & enregistrer"}
+        </Button>
+
+        <div className="space-y-2 pt-2">
+          {(["mistral", "agnes"] as Provider[]).map((p) => {
+            const st = status[p];
+            return (
+              <div key={p} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                <span className="capitalize font-medium">{p}</span>
+                {st?.configured ? (
+                  <Badge variant="secondary" className="gap-1">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> configurée
+                  </Badge>
+                ) : (
+                  <Badge variant="outline">non configurée</Badge>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+frontend/app/settings/page.tsx
+tsx
+import { ApiKeyForm } from "@/components/api-key-form";
+
+export default function SettingsPage() {
+  return (
+    <div className="mx-auto max-w-xl space-y-6">
+      <h1 className="text-2xl font-bold">Paramètres</h1>
+      <ApiKeyForm />
+    </div>
+  );
+}
+frontend/components/file-upload.tsx
+tsx
+"use client";
+import { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { api } from "@/lib/api";
+import { toast } from "sonner";
+import { Upload, FileText } from "lucide-react";
+
+export function FileUpload({ onUploaded }: { onUploaded?: () => void }) {
+  const [title, setTitle] = useState("");
+  const [subject, setSubject] = useState("général");
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function handleUpload() {
+    if (!file || !title.trim()) return toast.error("Titre et fichier requis.");
+    setLoading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("title", title.trim());
+      fd.append("subject", subject.trim() || "général");
+      const res = await api.uploadDocument(fd);
+      toast.success(res.message ?? "Cours importé");
+      setTitle(""); setFile(null);
+      onUploaded?.();
+    } catch (e: any) {
+      toast.error(e.message ?? "Erreur d'import");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <FileText className="h-5 w-5" /> Importer un cours
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Input placeholder="Titre (ex: Maths – Chapitre 3)" value={title}
+               onChange={(e) => setTitle(e.target.value)} />
+        <Input placeholder="Matière" value={subject}
+               onChange={(e) => setSubject(e.target.value)} />
+
+        <label className="flex cursor-pointer items-center gap-3 rounded-md border border-dashed px-4 py-6 hover:bg-secondary/40">
+          <Upload className="h-5 w-5" />
+          <span className="text-sm text-muted-foreground">
+            {file ? file.name : "PDF, DOCX, TXT, PNG, JPEG"}
+          </span>
+          <input type="file" hidden accept=".pdf,.docx,.txt,.png,.jpg,.jpeg"
+                 onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        </label>
+
+        {loading && <Progress value={70} className="h-1" />}
+
+        <Button onClick={handleUpload} disabled={loading} className="w-full">
+          {loading ? "Import en cours…" : "Importer"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+frontend/app/documents/page.tsx
+tsx
+"use client";
+import { useEffect, useState } from "react";
+import { FileUpload } from "@/components/file-upload";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { api } from "@/lib/api";
+
+export default function DocumentsPage() {
+  const [docs, setDocs] = useState<any[]>([]);
+
+  const refresh = () => api.listDocuments().then((r) => setDocs(r.documents ?? []));
+  useEffect(() => { refresh(); }, []);
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-6">
+      <h1 className="text-2xl font-bold">Cours importés</h1>
+      <FileUpload onUploaded={refresh} />
+
+      <div className="space-y-2">
+        {docs.length === 0 && (
+          <p className="text-sm text-muted-foreground">Aucun cours importé pour l'instant.</p>
+        )}
+        {docs.map((d) => (
+          <Card key={d.id}>
+            <CardContent className="flex items-center justify-between py-4">
+              <div>
+                <p className="font-medium">{d.title}</p>
+                <p className="text-xs text-muted-foreground">
+                  {d.kind.toUpperCase()} · {d.chunks ?? "?"} segments
+                </p>
+              </div>
+              <Badge variant="outline">{d.subject}</Badge>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+📝 Côté backend, ajoute un endpoint GET /api/documents/ qui renvoie {documents: [...]}.
+
+frontend/components/agent-timeline.tsx
+tsx
+"use client";
+import { CheckCircle2, Loader2, Circle, AlertCircle } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+
+export type AgentState = {
+  id: string;
+  label: string;
+  status: "idle" | "running" | "done" | "error";
+  logs: string[];
+  summary?: string;
+};
+
+const STATUS_ICON = {
+  idle: <Circle className="h-4 w-4 text-muted-foreground/40" />,
+  running: <Loader2 className="h-4 w-4 animate-spin text-blue-500" />,
+  done: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
+  error: <AlertCircle className="h-4 w-4 text-red-500" />,
+};
+
+export function AgentTimeline({ agents }: { agents: AgentState[] }) {
+  return (
+    <div className="space-y-2">
+      {agents.map((a) => (
+        <Card key={a.id}>
+          <CardContent className="flex items-start gap-3 py-3">
+            <div className="mt-0.5">{STATUS_ICON[a.status]}</div>
+            <div className="flex-1">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">{a.label}</span>
+                <Badge
+                  variant={a.status === "done" ? "secondary" : "outline"}
+                  className={cn(
+                    a.status === "running" && "border-blue-500 text-blue-600",
+                    a.status === "error" && "border-red-500 text-red-600",
+                  )}
+                >
+                  {a.status === "running" ? "en cours…"
+                    : a.status === "done" ? "prêt"
+                    : a.status === "error" ? "erreur"
+                    : "en attente"}
+                </Badge>
+              </div>
+              {a.logs.length > 0 && (
+                <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                  {a.logs.slice(-3).map((l, i) => <li key={i}>· {l}</li>)}
+                </ul>
+              )}
+              {a.summary && a.status === "done" && (
+                <p className="mt-1 text-xs font-medium text-emerald-700">{a.summary}</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+frontend/components/chat-stream.tsx
+tsx
+"use client";
+import { useRef, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { AgentTimeline, AgentState } from "./agent-timeline";
+import { sseStream } from "@/lib/sse";
+import { toast } from "sonner";
+import { Send, Square } from "lucide-react";
+
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+const AGENT_ORDER: { id: string; label: string }[] = [
+  { id: "planner", label: "🧭 Planificateur" },
+  { id: "retriever", label: "🔍 Chercheur" },
+  { id: "solver", label: "✍️ Solveur" },
+  { id: "tutor", label: "👨‍🏫 Tuteur" },
+];
+
+function freshAgents(): AgentState[] {
+  return AGENT_ORDER.map((a) => ({ ...a, status: "idle", logs: [] }));
+}
+
+export function ChatStream() {
+  const [question, setQuestion] = useState("");
+  const [provider, setProvider] = useState<"mistral" | "agnes">("mistral");
+  const [agents, setAgents] = useState<AgentState[]>(freshAgents());
+  const [answer, setAnswer] = useState("");
+  const [tutor, setTutor] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [hits, setHits] = useState<any[]>([]);
+  const abortRef = useRef<AbortController | null>(null);
+
+  function updateAgent(id: string, patch: Partial<AgentState> | ((a: AgentState) => AgentState)) {
+    setAgents((prev) => prev.map((a) => {
+      if (a.id !== id) return a;
+      return typeof patch === "function" ? patch(a) : { ...a, ...patch };
+    }));
+  }
+
+  async function ask() {
+    if (!question.trim()) return;
+    setBusy(true);
+    setAnswer("");
+    setTutor("");
+    setHits([]);
+    setAgents(freshAgents());
+
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    try {
+      await sseStream(
+        `${API}/api/chat/ask/stream`,
+        { question: question.trim(), provider },
+        (event, data) => {
+          switch (event) {
+            case "pipeline.start":
+              toast.info("Pipeline démarré");
+              break;
+
+            case "agent.start":
+              updateAgent(data.id, { status: "running" });
+              break;
+
+            case "agent.log":
+              updateAgent(data.id, (a) => ({ ...a, logs: [...a.logs, data.message] }));
+              break;
+
+            case "agent.done":
+              updateAgent(data.id, { status: "done", summary: data.summary });
+              break;
+
+            case "retrieval.hit":
+              setHits((h) => [...h, data]);
+              break;
+
+            case "answer.token":
+              setAnswer((a) => a + data.token);
+              break;
+
+            case "pipeline.done":
+              if (data.answer) setAnswer(data.answer);
+              toast.success("Réponse prête ✅");
+              break;
+
+            case "pipeline.error":
+              toast.error(data.message);
+              setAgents((prev) => prev.map((a) =>
+                a.status === "running" ? { ...a, status: "error" } : a));
+              break;
+          }
+        },
+        ctrl.signal,
+      );
+    } catch (e: any) {
+      if (e.name !== "AbortError") toast.error(e.message ?? "Erreur de streaming");
+    } finally {
+      setBusy(false);
+      abortRef.current = null;
+    }
+  }
+
+  function stop() {
+    abortRef.current?.abort();
+    setBusy(false);
+    setAgents((prev) => prev.map((a) =>
+      a.status === "running" ? { ...a, status: "error", summary: "interrompu" } : a));
+  }
+
+  return (
+    <div className="grid gap-6 md:grid-cols-[1fr_380px]">
+      {/* Colonne gauche : question + réponse */}
+      <div className="space-y-4">
+        <Card>
+          <CardHeader><CardTitle>💬 Poser une question</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <Textarea
+              rows={3}
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder="Ex : Explique la dérivée d'une fonction composée, avec un exemple du cours."
+            />
+            <div className="flex gap-2">
+              <Select value={provider} onValueChange={(v) => setProvider(v as any)}>
+                <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mistral">Mistral</SelectItem>
+                  <SelectItem value="agnes">Agnes</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button onClick={ask} disabled={busy} className="flex-1">
+                <Send className="mr-2 h-4 w-4" />
+                {busy ? "Génération…" : "Envoyer"}
+              </Button>
+              {busy && (
+                <Button variant="outline" onClick={stop}>
+                  <Square className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {(answer || tutor) && (
+          <Card>
+            <CardHeader><CardTitle>Réponse</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">
+                {answer || "…"}
+              </pre>
+              {tutor && (
+                <>
+                  <Separator />
+                  <div>
+                    <p className="mb-2 text-sm font-semibold">👨‍🏫 Fiche élève</p>
+                    <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-muted-foreground">
+                      {tutor}
+                    </pre>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {/* Colonne droite : agents + passages */}
+      <div className="space-y-4">
+        <div>
+          <h3 className="mb-2 text-sm font-semibold text-muted-foreground">Agents</h3>
+          <AgentTimeline agents={agents} />
+        </div>
+
+        {hits.length > 0 && (
+          <Card>
+            <CardHeader><CardTitle className="text-base">📎 Passages retenus</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              {hits.map((h) => (
+                <div key={h.index} className="rounded-md border p-2 text-xs">
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="font-medium">{h.title}</span>
+                    <span className="text-muted-foreground">score {h.score}</span>
+                  </div>
+                  <p className="text-muted-foreground">{h.preview}</p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+}
+frontend/app/chat/page.tsx
+tsx
+import { ChatStream } from "@/components/chat-stream";
+
+export default function ChatPage() {
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold">Questions</h1>
+      <ChatStream />
+    </div>
+  );
+}
+frontend/app/page.tsx — dashboard
+tsx
+import Link from "next/link";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { BookOpen, MessageSquare, Settings, Upload } from "lucide-react";
+
+const tiles = [
+  { href: "/documents", label: "Importer un cours", icon: Upload,
+    desc: "PDF, DOCX, TXT, images — titrés par matière." },
+  { href: "/chat", label: "Poser une question", icon: MessageSquare,
+    desc: "Les agents s'activent un par un et citent tes cours." },
+  { href: "/settings", label: "Configurer les clés API", icon: Settings,
+    desc: "Mistral et Agnes — vérification en direct." },
+];
+
+export default function Home() {
+  return (
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-3xl font-bold">🎓 Aide au Devoir</h1>
+        <p className="text-muted-foreground">
+          Importe tes cours, configure tes clés API, et pose toutes tes questions.
+        </p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        {tiles.map(({ href, label, icon: Icon, desc }) => (
+          <Link key={href} href={href}>
+            <Card className="h-full transition-shadow hover:shadow-md">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Icon className="h-5 w-5" /> {label}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">{desc}</CardContent>
+            </Card>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+▶️ Lancer le tout
+Backend
+bash
+cd backend
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+sudo apt install tesseract-ocr tesseract-ocr-fra   # OCR
+
+# .env
+cat > .env <<'EOF'
+MASTER_KEY=change-me-base64-32-bytes
+# Une fois la doc Agnes reçue :
+# AGNES_BASE_URL=https://api.agnes.ai/v1
+# AGNES_MODEL=agnes-chat-large
+# AGNES_TEST_PATH=/models
+# AGNES_AUTH_STYLE=bearer
+EOF
+
+uvicorn main:app --reload --port 8000
+Frontend
+bash
+cd frontend
+npm install
+npm run dev
+# → http://localhost:3000
+Vérifier le streaming
+bash
+curl -N -X POST http://localhost:8000/api/chat/ask/stream \
+  -H "Content-Type: application/json" \
+  -d '{"question":"Explique la dérivée d’une composée","provider":"mistral"}'
+Tu dois voir :
+
+text
+: ping
+
+event: pipeline.start
+data: {...}
+
+event: agent.start
+data: {"id":"planner","label":"🧭 Planificateur"}
+
+event: agent.log
+data: {"id":"planner","message":"Décomposition de la question…"}
+
+event: agent.done
+data: {"id":"planner","summary":"Plan établi","plan":"..."}
+...
+event: answer.token
+data: {"token":"La "}
+
+event: pipeline.done
+data: {"answer":"..."}
+❓ Pour finaliser le point C (Agnes)
+Envoie-moi :
+
+L'URL de base de l'API Agnes (ex. https://api.agnes.ai/v1).
+
+Comment on s'authentifie : Authorization: Bearer sk-... ? x-api-key: ... ? clé en query ?
+
+Un exemple de curl d'un endpoint de chat + un endpoint « qui ne consomme rien » (pour tester la clé sans facturer).
+
+Le nom du modèle à utiliser par défaut.
+
+Avec ça, je remplace le contenu de providers/agnes.py par un adaptateur exact, sans la partie générique.
+
+Sinon, on peut attaquer B (WebSearchAgent via Tavily) dès que tu as la clé — il suffira d'ajouter un TavilyProvider + un WebSearchAgent dans le pipeline (3 fichiers, 15 min).
+
+prevois un settings ou on pourra entrer les cles API
+The user wants a settings page where they can enter API keys. I already provided an ApiKeyForm component and a settings page. But they're asking again — maybe they want me to make it more complete/robust. Let me provide an improved, complete settings page with:
+
+All providers listed (Mistral, Agnes)
+
+Show/hide key toggle
+
+Test button separate from save
+
+Delete/revoke key
+
+Status indicators with verification timestamp
+
+Better UX with shadcn components
+
+Backend endpoints for delete and test-only
+
+Let me build a proper full settings implementation with all the CRUD operations.
+
+🔑 Page Paramètres complète — Gestion des clés API
+Voici une version robuste et complète de la page Paramètres, avec :
+
+Test sans sauvegarde (bouton séparé)
+
+Sauvegarde chiffrée
+
+Suppression d'une clé
+
+Affichage/masquage de la clé saisie
+
+Statut par provider (configurée, testée, date)
+
+Validation visuelle (icônes, couleurs, toasts)
+
+1. Backend — endpoints manquants
+backend/routes/api_keys.py (version complète)
+python
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from datetime import datetime
+from database import SessionLocal, ApiKey
+from security import encrypt, decrypt, mask
+from providers.registry import list_providers, get_provider
+
+router = APIRouter(prefix="/api/keys")
+
+
+class KeyIn(BaseModel):
+    provider: str
+    key: str
+
+
+# ---------- Liste des providers disponibles ----------
+@router.get("/providers")
+def providers():
+    return {"providers": list_providers()}
+
+
+# ---------- TEST seul : ne sauvegarde rien ----------
+@router.post("/test")
+async def test_key(payload: KeyIn):
+    if payload.provider not in list_providers():
+        raise HTTPException(400, f"Fournisseur inconnu : {payload.provider}")
+    ok, msg = await get_provider(payload.provider).verify(payload.key)
+    return {
+        "ok": ok,
+        "provider": payload.provider,
+        "message": msg,
+        "masked": mask(payload.key),
+    }
+
+
+# ---------- TEST + SAVE ----------
+@router.post("/save")
+async def save(payload: KeyIn):
+    if payload.provider not in list_providers():
+        raise HTTPException(400, "Fournisseur inconnu")
+
+    ok, msg = await get_provider(payload.provider).verify(payload.key)
+    if not ok:
+        raise HTTPException(401, msg)
+
+    db = SessionLocal()
+    row = db.query(ApiKey).filter_by(provider=payload.provider).first()
+    now = datetime.utcnow()
+    if row:
+        row.encrypted = encrypt(payload.key)
+        row.verified_at = now
+        action = "mise à jour"
+    else:
+        db.add(ApiKey(provider=payload.provider,
+                      encrypted=encrypt(payload.key),
+                      verified_at=now))
+        action = "enregistrée"
+    db.commit()
+    db.close()
+
+    return {
+        "status": "ok",
+        "provider": payload.provider,
+        "masked": mask(payload.key),
+        "verified_at": now.isoformat(),
+        "message": f"✅ Clé {payload.provider} {action} ({mask(payload.key)}).",
+    }
+
+
+# ---------- Statut détaillé ----------
+@router.get("/status")
+def status():
+    db = SessionLocal()
+    rows = db.query(ApiKey).all()
+    db.close()
+    return {
+        r.provider: {
+            "configured": True,
+            "masked": mask(decrypt(r.encrypted)),
+            "verified_at": r.verified_at.isoformat() if r.verified_at else None,
+        }
+        for r in rows
+    }
+
+
+# ---------- Suppression ----------
+@router.delete("/{provider}")
+def delete_key(provider: str):
+    db = SessionLocal()
+    row = db.query(ApiKey).filter_by(provider=provider).first()
+    if not row:
+        db.close()
+        raise HTTPException(404, f"Aucune clé {provider} enregistrée")
+    db.delete(row)
+    db.commit()
+    db.close()
+    return {"status": "ok", "message": f"🗑️ Clé {provider} supprimée."}
+⚠️ Pense à révoquer la clé côté fournisseur aussi — l'app ne peut que l'oublier localement.
+
+2. Frontend — composants shadcn à ajouter
+bash
+npx shadcn@latest add alert-dialog tooltip dropdown-menu
+3. frontend/lib/api.ts (extension)
+ts
+export type Provider = "mistral" | "agnes";
+
+export type KeyStatus = {
+  configured: boolean;
+  masked?: string;
+  verified_at?: string;
+};
+
+export const api = {
+  // ... existant ...
+
+  async providers(): Promise<{ providers: Provider[] }> {
+    const r = await fetch(`${API}/api/keys/providers`);
+    return r.json();
+  },
+
+  async testKey(provider: Provider, key: string) {
+    const r = await fetch(`${API}/api/keys/test`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider, key }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail ?? "Erreur");
+    return j as { ok: boolean; provider: Provider; message: string; masked: string };
+  },
+
+  async saveKey(provider: Provider, key: string) {
+    const r = await fetch(`${API}/api/keys/save`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider, key }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail ?? "Erreur");
+    return j as { message: string; masked: string; verified_at: string };
+  },
+
+  async keysStatus(): Promise<Record<string, KeyStatus>> {
+    const r = await fetch(`${API}/api/keys/status`);
+    return r.json();
+  },
+
+  async deleteKey(provider: Provider) {
+    const r = await fetch(`${API}/api/keys/${provider}`, { method: "DELETE" });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail ?? "Erreur");
+    return j;
+  },
+};
+4. frontend/components/api-key-form.tsx — refonte complète
+tsx
+"use client";
+
+import { useEffect, useState } from "react";
+import {
+  Card, CardContent, CardHeader, CardTitle, CardDescription,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
+  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { api, Provider, KeyStatus } from "@/lib/api";
+import { toast } from "sonner";
+import {
+  CheckCircle2, XCircle, Loader2, ShieldCheck, Eye, EyeOff,
+  Save, FlaskConical, Trash2, KeyRound, Clock, ExternalLink,
+} from "lucide-react";
+
+const PROVIDER_META: Record<Provider, { label: string; hint: string; docs: string }> = {
+  mistral: {
+    label: "Mistral",
+    hint: "Clé de type sk-... (console.mistral.ai)",
+    docs: "https://console.mistral.ai/api-keys/",
+  },
+  agnes: {
+    label: "Agnes",
+    hint: "Clé fournie par Agnes AI",
+    docs: "#",
+  },
+};
+
+export function ApiKeyForm() {
+  const [providers, setProviders] = useState<Provider[]>(["mistral", "agnes"]);
+  const [provider, setProvider] = useState<Provider>("mistral");
+  const [key, setKey] = useState("");
+  const [showKey, setShowKey] = useState(false);
+  const [status, setStatus] = useState<Record<string, KeyStatus>>({});
+
+  const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  // Charger providers + statut au montage
+  useEffect(() => {
+    (async () => {
+      try {
+        const { providers } = await api.providers();
+        setProviders(providers);
+      } catch { /* fallback */ }
+      refreshStatus();
+    })();
+  }, []);
+
+  // Reset le résultat de test quand on change de provider ou de clé
+  useEffect(() => { setTestResult(null); }, [provider, key]);
+
+  async function refreshStatus() {
+    try { setStatus(await api.keysStatus()); } catch { /* ignore */ }
+  }
+
+  async function handleTest() {
+    if (!key.trim()) return toast.error("Colle une clé à tester.");
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const r = await api.testKey(provider, key.trim());
+      setTestResult({ ok: r.ok, message: r.message });
+      if (r.ok) toast.success(r.message);
+      else toast.error(r.message);
+    } catch (e: any) {
+      setTestResult({ ok: false, message: e.message });
+      toast.error(e.message);
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function handleSave() {
+    if (!key.trim()) return toast.error("Colle une clé avant d'enregistrer.");
+    setSaving(true);
+    try {
+      const r = await api.saveKey(provider, key.trim());
+      toast.success(r.message);
+      setKey("");
+      setTestResult(null);
+      await refreshStatus();
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(p: Provider) {
+    try {
+      const r = await api.deleteKey(p);
+      toast.success(r.message);
+      await refreshStatus();
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  }
+
+  const current = status[provider];
+
+  return (
+    <TooltipProvider delayDuration={200}>
+      <div className="space-y-6">
+
+        {/* ---------- Carte principale : formulaire ---------- */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5" /> Clés API
+            </CardTitle>
+            <CardDescription>
+              Les clés sont chiffrées côté serveur (Fernet) et vérifiées en direct
+              auprès du fournisseur. Elles ne sont jamais renvoyées au navigateur.
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent className="space-y-4">
+
+            {/* Choix du provider */}
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Fournisseur</label>
+              <Select value={provider} onValueChange={(v) => setProvider(v as Provider)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {providers.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      <div className="flex items-center gap-2">
+                        <span className="capitalize">{PROVIDER_META[p]?.label ?? p}</span>
+                        {status[p]?.configured && (
+                          <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                            configurée
+                          </Badge>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {PROVIDER_META[provider]?.hint}
+              </p>
+            </div>
+
+            {/* Saisie de la clé */}
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Clé secrète</label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    type={showKey ? "text" : "password"}
+                    placeholder="sk-..."
+                    value={key}
+                    onChange={(e) => setKey(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleTest()}
+                    className="pl-9 pr-10 font-mono text-sm"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKey((s) => !s)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-secondary"
+                    aria-label={showKey ? "Masquer" : "Afficher"}
+                  >
+                    {showKey
+                      ? <EyeOff className="h-4 w-4" />
+                      : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Résultat du test */}
+            {testResult && (
+              <div
+                className={
+                  "flex items-start gap-2 rounded-md border p-3 text-sm " +
+                  (testResult.ok
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+                    : "border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300")
+                }
+              >
+                {testResult.ok
+                  ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                  : <XCircle className="mt-0.5 h-4 w-4 shrink-0" />}
+                <span>{testResult.message}</span>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                variant="outline"
+                onClick={handleTest}
+                disabled={testing || saving || !key.trim()}
+                className="flex-1"
+              >
+                {testing
+                  ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Test…</>
+                  : <><FlaskConical className="mr-2 h-4 w-4" /> Tester</>}
+              </Button>
+
+              <Button
+                onClick={handleSave}
+                disabled={saving || testing || !key.trim()}
+                className="flex-1"
+              >
+                {saving
+                  ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Enregistrement…</>
+                  : <><Save className="mr-2 h-4 w-4" /> Vérifier & enregistrer</>}
+              </Button>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              💡 <strong>Tester</strong> ne sauvegarde rien. <strong>Enregistrer</strong> teste
+              puis remplace la clé existante si la vérification réussit.
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* ---------- Carte secondaire : état des clés ---------- */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">État des clés enregistrées</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {providers.map((p, i) => {
+              const st = status[p];
+              const configured = !!st?.configured;
+              return (
+                <div key={p}>
+                  {i > 0 && <Separator className="my-3" />}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={
+                          "flex h-9 w-9 items-center justify-center rounded-full " +
+                          (configured
+                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+                            : "bg-secondary text-muted-foreground")
+                        }
+                      >
+                        {configured
+                          ? <CheckCircle2 className="h-4 w-4" />
+                          : <KeyRound className="h-4 w-4" />}
+                      </div>
+
+                      <div>
+                        <p className="text-sm font-medium capitalize">
+                          {PROVIDER_META[p]?.label ?? p}
+                        </p>
+                        <p className="font-mono text-xs text-muted-foreground">
+                          {configured
+                            ? st.masked ?? "••••"
+                            : "Aucune clé enregistrée"}
+                        </p>
+                        {st?.verified_at && (
+                          <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+                            <Clock className="h-3 w-3" />
+                            {new Date(st.verified_at).toLocaleString("fr-FR")}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      {configured ? (
+                        <AlertDialog>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/40"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                            </TooltipTrigger>
+                            <TooltipContent>Supprimer la clé</TooltipContent>
+                          </Tooltip>
+
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                Supprimer la clé {PROVIDER_META[p]?.label ?? p} ?
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                L'application oubliera la clé localement. Pense à la
+                                révoquer aussi dans la console du fournisseur.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Annuler</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDelete(p)}
+                                className="bg-red-600 hover:bg-red-700"
+                              >
+                                Supprimer
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setProvider(p);
+                            document
+                              .querySelector<HTMLInputElement>('input[type="password"], input[type="text"]')
+                              ?.focus();
+                          }}
+                        >
+                          Configurer
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+
+        {/* ---------- Carte tertiaire : info sécurité ---------- */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4" /> Comment sont stockées les clés ?
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-muted-foreground">
+            <p>• Chiffrement symétrique <strong>Fernet</strong> côté serveur.</p>
+            <p>• La clé maître (<code>MASTER_KEY</code>) vit uniquement dans le <code>.env</code> du serveur.</p>
+            <p>• Aucune clé en clair n'est écrite en base ni renvoyée au frontend.</p>
+            <p>• Vous pouvez révoquer une clé à tout moment dans la console du fournisseur.</p>
+          </CardContent>
+        </Card>
+      </div>
+    </TooltipProvider>
+  );
+}
+5. frontend/app/settings/page.tsx — mise en page
+tsx
+import { ApiKeyForm } from "@/components/api-key-form";
+
+export default function SettingsPage() {
+  return (
+    <div className="mx-auto max-w-2xl space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">Paramètres</h1>
+        <p className="text-muted-foreground">
+          Configure ici les fournisseurs d'IA. Les agents du pipeline les utiliseront
+          automatiquement selon le provider choisi dans le chat.
+        </p>
+      </div>
+      <ApiKeyForm />
+    </div>
+  );
+}
+6. Aperçu de l'UX
+Écran initial (aucune clé)
+text
+┌──────────────────────────────────────────────────┐
+│  🛡️ Clés API                                     │
+│  Les clés sont chiffrées côté serveur…          │
+├──────────────────────────────────────────────────┤
+│  Fournisseur                                     │
+│  ┌────────────────────────────────────────────┐  │
+│  │ Mistral                                 ▾ │  │
+│  └────────────────────────────────────────────┘  │
+│  Clé de type sk-... (console.mistral.ai)        │
+│                                                  │
+│  Clé secrète                                     │
+│  ┌────────────────────────────────────────────┐  │
+│  │ 🔑 ••••••••••••••••••••••••••    👁️       │  │
+│  └────────────────────────────────────────────┘  │
+│                                                  │
+│  [ 🧪 Tester ]      [ 💾 Vérifier & enregistrer ]│
+│  💡 Tester ne sauvegarde rien.                   │
+└──────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────┐
+│  État des clés enregistrées                     │
+├──────────────────────────────────────────────────┤
+│  🔑  Mistral                 [ Configurer ]     │
+│      Aucune clé enregistrée                     │
+│  ──────────────────────────────────────────      │
+│  🔑  Agnes                   [ Configurer ]     │
+│      Aucune clé enregistrée                     │
+└──────────────────────────────────────────────────┘
+Après test réussi
+text
+  ✅ Clé Mistral valide ✅
+Après enregistrement
+text
+┌──────────────────────────────────────────────────┐
+│  État des clés enregistrées                     │
+├──────────────────────────────────────────────────┤
+│  ✅  Mistral                             [🗑️]  │
+│      sk-a…4f2a                                    │
+│      🕐 15/10/2026 14:32                         │
+│  ──────────────────────────────────────────      │
+│  🔑  Agnes                   [ Configurer ]     │
+│      Aucune clé enregistrée                     │
+└──────────────────────────────────────────────────┘
+7. Flux utilisateur résumé
+Action	Requête	Effet
+Ouvrir les paramètres	GET /api/keys/providers + GET /api/keys/status	Affiche les fournisseurs + l'état actuel
+Cliquer Tester	POST /api/keys/test	Vérifie la clé, ne stocke rien
+Cliquer Enregistrer	POST /api/keys/save	Vérifie puis stocke (chiffré)
+Cliquer 🗑️	DELETE /api/keys/{provider}	Supprime la clé localement
+Utiliser le chat	(lit la clé en base)	Déchiffre, appelle le provider
+8. Bonus : .env.example du backend
+bash
+# backend/.env.example
+
+# Clé maître pour le chiffrement (génère-la : openssl rand -base64 32)
+MASTER_KEY=remplace-moi-par-32-bytes-base64
+
+# Agnes (à compléter dès qu'on a la doc)
+AGNES_BASE_URL=
+AGNES_MODEL=agnes-chat
+AGNES_TEST_PATH=/models
+AGNES_AUTH_STYLE=bearer
+✅ Ce qui est prêt
+✔️ Page /settings complète, test séparé de la sauvegarde
+
+✔️ Toggle afficher/masquer la clé
+
+✔️ Suppression avec confirmation (AlertDialog)
+
+✔️ Statut par provider avec horodatage
+
+✔️ Chiffrement côté serveur, jamais de clé en clair renvoyée
+
+✔️ Toasts succès/erreur, validation visuelle
+
+Prochaines étapes possibles :
+
+B : WebSearchAgent via Tavily (dès que tu as la clé)
+
+C : je remplis providers/agnes.py exact dès que tu m'envoies l'URL + un curl
+
+Multi-utilisateurs : ajout d'un user_id sur ApiKey + JWT
+
+Export PDF de la réponse finale

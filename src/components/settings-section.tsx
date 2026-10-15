@@ -1,0 +1,350 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Eye,
+  EyeOff,
+  FlaskConical,
+  KeyRound,
+  Loader2,
+  Save,
+  ShieldCheck,
+  Trash2,
+  XCircle,
+} from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { deleteApiKey, fetchProviders, saveApiKey, testApiKey } from "@/lib/api-client";
+import type { ProviderStatusDTO } from "@/lib/types";
+import { toast } from "sonner";
+
+const SECURITY_POINTS = [
+  "Chiffrement AES-256-GCM côté serveur — la clé n'est jamais stockée en clair.",
+  "La clé n'est jamais renvoyée en clair : seule une version masquée (sk-…abcd) est affichée.",
+  "Vérification en direct auprès du fournisseur avant enregistrement.",
+  "Le bouton « Tester » ne sauvegarde rien : il valide la clé sans la conserver.",
+];
+
+function ProviderCard({
+  provider,
+  onChanged,
+}: {
+  provider: ProviderStatusDTO;
+  onChanged: () => void;
+}) {
+  const isZai = provider.id === "zai";
+  const [key, setKey] = useState("");
+  const [show, setShow] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const busy = testing || saving;
+  const serverBlocked = provider.serverReady === false;
+  const disabled = busy || serverBlocked || key.trim().length === 0;
+
+  const runTest = async () => {
+    if (disabled) return;
+    setTesting(true);
+    setResult(null);
+    try {
+      const res = await testApiKey(provider.id, key.trim());
+      setResult({ ok: res.ok, message: res.message });
+      if (res.ok) toast.success(res.message);
+      else toast.error(res.message);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erreur réseau pendant le test";
+      setResult({ ok: false, message: msg });
+      toast.error(msg);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const runSave = async () => {
+    if (disabled) return;
+    setSaving(true);
+    setResult(null);
+    try {
+      const res = await saveApiKey(provider.id, key.trim());
+      setResult({ ok: res.ok, message: res.message });
+      if (res.ok) {
+        toast.success(res.message);
+        setKey("");
+        onChanged();
+      } else {
+        toast.error(res.message);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erreur pendant l'enregistrement";
+      setResult({ ok: false, message: msg });
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const runDelete = async () => {
+    setDeleting(true);
+    try {
+      const message = await deleteApiKey(provider.id);
+      toast.success(message);
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Suppression impossible");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="text-base">{provider.label}</CardTitle>
+          <Badge
+            variant={provider.builtIn ? "secondary" : provider.configured ? "outline" : "outline"}
+            className={
+              provider.builtIn
+                ? undefined
+                : provider.configured
+                  ? "border-transparent bg-emerald-100 text-emerald-800"
+                  : undefined
+            }
+          >
+            {provider.builtIn ? "Inclus" : provider.configured ? "Configurée" : "Non configurée"}
+          </Badge>
+        </div>
+        <CardDescription>{provider.description}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {serverBlocked && (
+          <Alert className="border-amber-200 bg-amber-50 text-amber-900">
+            <AlertTriangle className="size-4 text-amber-600" />
+            <AlertTitle>Serveur non disponible</AlertTitle>
+            <AlertDescription>
+              {provider.serverNote ?? "Ce fournisseur n'est pas prêt pour le moment."}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {isZai ? (
+          <p className="text-sm text-muted-foreground">
+            Aucune clé nécessaire — ce fournisseur fonctionne immédiatement.
+          </p>
+        ) : (
+          <>
+            <div className="space-y-2">
+              <Label htmlFor={`key-${provider.id}`}>Clé API</Label>
+              <div className="relative">
+                <KeyRound
+                  className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <Input
+                  id={`key-${provider.id}`}
+                  type={show ? "text" : "password"}
+                  value={key}
+                  onChange={(e) => setKey(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void runTest();
+                    }
+                  }}
+                  placeholder="sk-..."
+                  disabled={serverBlocked}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="h-11 pl-9 pr-11 font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShow((s) => !s)}
+                  aria-label={show ? "Masquer la clé" : "Afficher la clé"}
+                  className="absolute right-1.5 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+                >
+                  {show ? (
+                    <EyeOff className="size-4" aria-hidden="true" />
+                  ) : (
+                    <Eye className="size-4" aria-hidden="true" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {result && (
+              <Alert
+                className={
+                  result.ok
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                    : "border-red-200 bg-red-50 text-red-900"
+                }
+              >
+                {result.ok ? (
+                  <CheckCircle2 className="size-4 text-emerald-600" />
+                ) : (
+                  <XCircle className="size-4 text-red-500" />
+                )}
+                <AlertDescription>{result.message}</AlertDescription>
+              </Alert>
+            )}
+
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                variant="outline"
+                className="h-11 flex-1"
+                onClick={() => void runTest()}
+                disabled={disabled}
+              >
+                {testing ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <FlaskConical className="size-4" aria-hidden="true" />
+                )}
+                {testing ? "Test en cours…" : "Tester"}
+              </Button>
+              <Button
+                className="h-11 flex-1 bg-emerald-600 text-white hover:bg-emerald-700"
+                onClick={() => void runSave()}
+                disabled={disabled}
+              >
+                {saving ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Save className="size-4" aria-hidden="true" />
+                )}
+                {saving ? "Vérification…" : "Vérifier & enregistrer"}
+              </Button>
+            </div>
+
+            {provider.configured && provider.masked && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/40 p-3">
+                <div className="min-w-0">
+                  <p className="truncate font-mono text-xs text-muted-foreground">{provider.masked}</p>
+                  {provider.verifiedAt && (
+                    <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                      <Clock className="size-3 shrink-0" aria-hidden="true" />
+                      Vérifiée le {new Date(provider.verifiedAt).toLocaleString("fr-FR")}
+                    </p>
+                  )}
+                </div>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-10 shrink-0 text-red-500 hover:bg-red-50 hover:text-red-600"
+                      disabled={deleting}
+                      aria-label={`Supprimer la clé ${provider.label}`}
+                    >
+                      {deleting ? (
+                        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Trash2 className="size-4" aria-hidden="true" />
+                      )}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Supprimer la clé {provider.label} ?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        L&apos;application oubliera la clé localement. Pensez aussi à la révoquer dans la
+                        console du fournisseur.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Annuler</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-red-600 text-white hover:bg-red-700"
+                        onClick={() => void runDelete()}
+                      >
+                        Supprimer
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function SettingsSection() {
+  const [providers, setProviders] = useState<ProviderStatusDTO[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadProviders = useCallback(async () => {
+    try {
+      setProviders(await fetchProviders());
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Impossible de charger les fournisseurs");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadProviders();
+  }, [loadProviders]);
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold md:text-3xl">Paramètres</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Gérez les clés API des fournisseurs de modèles. Z.ai fonctionne sans configuration.
+        </p>
+      </div>
+
+      {loading ? (
+        <Card className="gap-0 py-0">
+          <CardContent className="flex items-center gap-3 p-6 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            Chargement des fournisseurs…
+          </CardContent>
+        </Card>
+      ) : (
+        providers.map((p) => <ProviderCard key={p.id} provider={p} onChanged={() => void loadProviders()} />)
+      )}
+
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="size-5 text-emerald-600" aria-hidden="true" />
+            <CardTitle className="text-base">🔒 Sécurité</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <ul className="list-disc space-y-1.5 pl-5 text-sm text-muted-foreground">
+            {SECURITY_POINTS.map((point) => (
+              <li key={point}>{point}</li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

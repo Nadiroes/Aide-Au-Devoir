@@ -1,0 +1,56 @@
+// Prisma schema — Aide au Devoir
+// Documents (cours) with extracted text chunks for RAG, encrypted API keys, chat history.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Document {
+  id        String   @id @default(cuid())
+  title     String
+  subject   String   @default("Général")
+  kind      String // pdf | docx | txt | md | png | jpg | jpeg | webp
+  fileName  String
+  status    String   @default("prêt") // prêt | erreur
+  chunks    Int      @default(0)
+  chars     Int      @default(0)
+  note      String? // extraction note (e.g. scanned pdf warning)
+  createdAt DateTime @default(now())
+  chunkList Chunk[]
+}
+
+model Chunk {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  idx        Int
+  content    String
+
+  @@index([documentId])
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  provider   String    @unique // mistral | agnes
+  encrypted  String // AES-256-GCM
+  masked     String
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String
+  tutor     String?
+  plan      String?
+  provider  String
+  mode      String   @default("cours") // cours | libre
+  sources   String? // JSON: RetrievalHit[]
+  createdAt DateTime @default(now())
+}
