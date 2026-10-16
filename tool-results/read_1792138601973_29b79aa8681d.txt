@@ -1,0 +1,946 @@
+     1→"use client";
+     2→
+     3→import { useCallback, useEffect, useRef, useState } from "react";
+     4→import {
+     5→  CheckCircle2,
+     6→  Eye,
+     7→  FileUp,
+     8→  Folder,
+     9→  FolderPlus,
+    10→  FolderSymlink,
+    11→  Headphones,
+    12→  BookOpenCheck,
+    13→  Loader2,
+    14→  MoreHorizontal,
+    15→  Pencil,
+    16→  Search,
+    17→  Trash2,
+    18→  Upload,
+    19→} from "lucide-react";
+    20→import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+    21→import { Button } from "@/components/ui/button";
+    22→import { Input } from "@/components/ui/input";
+    23→import { Label } from "@/components/ui/label";
+    24→import { Badge } from "@/components/ui/badge";
+    25→import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+    26→import { Progress } from "@/components/ui/progress";
+    27→import { Textarea } from "@/components/ui/textarea";
+    28→import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+    29→import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+    30→import {
+    31→  AlertDialog,
+    32→  AlertDialogAction,
+    33→  AlertDialogCancel,
+    34→  AlertDialogContent,
+    35→  AlertDialogDescription,
+    36→  AlertDialogFooter,
+    37→  AlertDialogHeader,
+    38→  AlertDialogTitle,
+    39→} from "@/components/ui/alert-dialog";
+    40→import {
+    41→  DropdownMenu,
+    42→  DropdownMenuContent,
+    43→  DropdownMenuItem,
+    44→  DropdownMenuSeparator,
+    45→  DropdownMenuSub,
+    46→  DropdownMenuSubContent,
+    47→  DropdownMenuSubTrigger,
+    48→  DropdownMenuTrigger,
+    49→} from "@/components/ui/dropdown-menu";
+    50→import { AgentStatusList, type AgentDisplay } from "@/components/agent-status";
+    51→import { isAbortError, postSse } from "@/lib/sse-client";
+    52→import {
+    53→  createFolder,
+    54→  deleteDocument,
+    55→  deleteFolder,
+    56→  fetchDocumentDetail,
+    57→  fetchFolders,
+    58→  updateDocument,
+    59→  updateFolder,
+    60→} from "@/lib/api-client";
+    61→import { INGEST_AGENT_ORDER } from "@/lib/types";
+    62→import type { DocumentDTO, FolderDTO, IngestEvent } from "@/lib/types";
+    63→import { toast } from "sonner";
+    64→import { cn } from "@/lib/utils";
+    65→
+    66→const ACCEPTED = ".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.webp";
+    67→const FORMATS_HINT = "PDF, DOCX, TXT, MD, PNG, JPG, WEBP";
+    68→const FOLDER_COLORS = ["#10b981", "#f59e0b", "#f43f5e", "#14b8a6", "#a855f7", "#78716c"];
+    69→
+    70→function freshAgents(): AgentDisplay[] {
+    71→  return INGEST_AGENT_ORDER.map((a) => ({
+    72→    id: a.id,
+    73→    label: a.label,
+    74→    status: "idle" as const,
+    75→    logs: [],
+    76→  }));
+    77→}
+    78→
+    79→export interface DocumentsSectionProps {
+    80→  documents: DocumentDTO[];
+    81→  loading?: boolean;
+    82→  onDocumentsChanged: () => void;
+    83→  onRevise?: (documentId: string) => void;
+    84→  onImported?: (doc: DocumentDTO) => void;
+    85→}
+    86→
+    87→export function DocumentsSection({
+    88→  documents,
+    89→  loading = false,
+    90→  onDocumentsChanged,
+    91→  onRevise,
+    92→  onImported,
+    93→}: DocumentsSectionProps) {
+    94→  // ----- Upload flow (unchanged) -----
+    95→  const [title, setTitle] = useState("");
+    96→  const [subject, setSubject] = useState("");
+    97→  const [file, setFile] = useState<File | null>(null);
+    98→  const [dragOver, setDragOver] = useState(false);
+    99→  const [uploading, setUploading] = useState(false);
+   100→  const [progress, setProgress] = useState(0);
+   101→  const [agents, setAgents] = useState<AgentDisplay[]>(freshAgents);
+   102→  const [success, setSuccess] = useState<string | null>(null);
+   103→  const inputRef = useRef<HTMLInputElement | null>(null);
+   104→
+   105→  // ----- Folders -----
+   106→  const [folders, setFolders] = useState<FolderDTO[]>([]);
+   107→  const [activeFolder, setActiveFolder] = useState<string>("all");
+   108→  const [newFolderName, setNewFolderName] = useState("");
+   109→  const [createOpen, setCreateOpen] = useState(false);
+   110→  const [creatingFolder, setCreatingFolder] = useState(false);
+   111→  const [renamingFolder, setRenamingFolder] = useState<{ id: string; name: string } | null>(null);
+   112→  const [savingFolder, setSavingFolder] = useState(false);
+   113→  const [folderToDelete, setFolderToDelete] = useState<FolderDTO | null>(null);
+   114→  const [deletingFolder, setDeletingFolder] = useState(false);
+   115→
+   116→  // ----- Search + doc dialogs -----
+   117→  const [search, setSearch] = useState("");
+   118→  const [docToRename, setDocToRename] = useState<{ id: string; title: string } | null>(null);
+   119→  const [savingRename, setSavingRename] = useState(false);
+   120→  const [docToEdit, setDocToEdit] = useState<{ id: string; title: string; text: string } | null>(null);
+   121→  const [loadingEditText, setLoadingEditText] = useState(false);
+   122→  const [savingText, setSavingText] = useState(false);
+   123→  const [docToDelete, setDocToDelete] = useState<DocumentDTO | null>(null);
+   124→  const [deletingId, setDeletingId] = useState<string | null>(null);
+   125→
+   126→  const loadFolders = useCallback(async () => {
+   127→    try {
+   128→      setFolders(await fetchFolders());
+   129→    } catch (err) {
+   130→      console.error(err);
+   131→    }
+   132→  }, []);
+   133→
+   134→  useEffect(() => {
+   135→    void loadFolders();
+   136→  }, [loadFolders]);
+   137→
+   138→  // Indeterminate-feeling progress while uploading.
+   139→  useEffect(() => {
+   140→    if (!uploading) return;
+   141→    const t = window.setInterval(() => {
+   142→      setProgress((p) => (p < 88 ? p + Math.max(1, Math.round(Math.random() * 5)) : p));
+   143→    }, 450);
+   144→    return () => window.clearInterval(t);
+   145→  }, [uploading]);
+   146→
+   147→  const patchAgent = useCallback((id: string, patch: Partial<AgentDisplay>) => {
+   148→    setAgents((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+   149→  }, []);
+   150→
+   151→  const handleEvent = useCallback(
+   152→    (event: IngestEvent, docTitle: string) => {
+   153→      switch (event.type) {
+   154→        case "ingest.start":
+   155→          setProgress(10);
+   156→          break;
+   157→        case "agent.start":
+   158→          patchAgent(event.id, { status: "running", logs: [], summary: undefined });
+   159→          break;
+   160→        case "agent.log":
+   161→          setAgents((prev) =>
+   162→            prev.map((a) => (a.id === event.id ? { ...a, logs: [...a.logs, event.message] } : a))
+   163→          );
+   164→          break;
+   165→        case "agent.done":
+   166→          patchAgent(event.id, { status: "done", summary: event.summary });
+   167→          setProgress((p) => Math.min(95, p + 25));
+   168→          break;
+   169→        case "agent.error":
+   170→          patchAgent(event.id, { status: "error", summary: event.message });
+   171→          break;
+   172→        case "ingest.done":
+   173→          setProgress(100);
+   174→          toast.success(`« ${docTitle} » importé — ${event.document.chunks} segments indexés`);
+   175→          setSuccess("Prêt à réviser — direction l'onglet Révision");
+   176→          window.setTimeout(() => setSuccess(null), 6000);
+   177→          setTitle("");
+   178→          setSubject("");
+   179→          setFile(null);
+   180→          if (inputRef.current) inputRef.current.value = "";
+   181→          onDocumentsChanged();
+   182→          void loadFolders();
+   183→          onImported?.(event.document);
+   184→          break;
+   185→        case "ingest.error":
+   186→          toast.error(event.message);
+   187→          setAgents((prev) =>
+   188→            prev.map((a) => (a.status === "running" ? { ...a, status: "error" as const } : a))
+   189→          );
+   190→          break;
+   191→      }
+   192→    },
+   193→    [patchAgent, onDocumentsChanged, onImported, loadFolders]
+   194→  );
+   195→
+   196→  const handleImport = async () => {
+   197→    if (!file || !title.trim() || uploading) return;
+   198→    setUploading(true);
+   199→    setSuccess(null);
+   200→    setAgents(freshAgents());
+   201→    setProgress(5);
+   202→
+   203→    const fd = new FormData();
+   204→    fd.append("file", file);
+   205→    fd.append("title", title.trim());
+   206→    fd.append("subject", subject.trim());
+   207→    const docTitle = title.trim();
+   208→
+   209→    try {
+   210→      await postSse<IngestEvent>("/api/documents", fd, (event) => handleEvent(event, docTitle));
+   211→    } catch (err) {
+   212→      if (isAbortError(err)) {
+   213→        toast.info("Import interrompu");
+   214→      } else {
+   215→        toast.error(err instanceof Error ? err.message : "Erreur pendant l'import");
+   216→      }
+   217→      setAgents((prev) =>
+   218→        prev.map((a) => (a.status === "running" ? { ...a, status: "error" as const } : a))
+   219→      );
+   220→    } finally {
+   221→      setUploading(false);
+   222→      setProgress(0);
+   223→    }
+   224→  };
+   225→
+   226→  // ----- Folder actions -----
+   227→
+   228→  const handleCreateFolder = async (color: string) => {
+   229→    const name = newFolderName.trim();
+   230→    if (!name || creatingFolder) return;
+   231→    setCreatingFolder(true);
+   232→    try {
+   233→      await createFolder({ name, color });
+   234→      toast.success(`Dossier « ${name} » créé`);
+   235→      setNewFolderName("");
+   236→      setCreateOpen(false);
+   237→      await loadFolders();
+   238→      onDocumentsChanged();
+   239→    } catch (err) {
+   240→      toast.error(err instanceof Error ? err.message : "Création du dossier impossible");
+   241→    } finally {
+   242→      setCreatingFolder(false);
+   243→    }
+   244→  };
+   245→
+   246→  const handleRenameFolder = async () => {
+   247→    if (!renamingFolder) return;
+   248→    const name = renamingFolder.name.trim();
+   249→    if (!name) return;
+   250→    setSavingFolder(true);
+   251→    try {
+   252→      await updateFolder(renamingFolder.id, { name });
+   253→      toast.success("Dossier renommé");
+   254→      setRenamingFolder(null);
+   255→      await loadFolders();
+   256→      onDocumentsChanged();
+   257→    } catch (err) {
+   258→      toast.error(err instanceof Error ? err.message : "Renommage impossible");
+   259→    } finally {
+   260→      setSavingFolder(false);
+   261→    }
+   262→  };
+   263→
+   264→  const handleDeleteFolder = async () => {
+   265→    if (!folderToDelete) return;
+   266→    setDeletingFolder(true);
+   267→    try {
+   268→      await deleteFolder(folderToDelete.id);
+   269→      toast.success(`Dossier « ${folderToDelete.name} » supprimé — les cours sont conservés`);
+   270→      if (activeFolder === folderToDelete.id) setActiveFolder("all");
+   271→      setFolderToDelete(null);
+   272→      await loadFolders();
+   273→      onDocumentsChanged();
+   274→    } catch (err) {
+   275→      toast.error(err instanceof Error ? err.message : "Suppression impossible");
+   276→    } finally {
+   277→      setDeletingFolder(false);
+   278→    }
+   279→  };
+   280→
+   281→  // ----- Document actions -----
+   282→
+   283→  const handleDeleteDoc = async (id: string) => {
+   284→    setDeletingId(id);
+   285→    try {
+   286→      await deleteDocument(id);
+   287→      toast.success("Cours supprimé");
+   288→      setDocToDelete(null);
+   289→      onDocumentsChanged();
+   290→      void loadFolders();
+   291→    } catch (err) {
+   292→      toast.error(err instanceof Error ? err.message : "Suppression impossible");
+   293→    } finally {
+   294→      setDeletingId(null);
+   295→    }
+   296→  };
+   297→
+   298→  const handleRenameDoc = async () => {
+   299→    if (!docToRename) return;
+   300→    const newTitle = docToRename.title.trim();
+   301→    if (!newTitle) return;
+   302→    setSavingRename(true);
+   303→    try {
+   304→      await updateDocument(docToRename.id, { title: newTitle });
+   305→      toast.success("Titre modifié");
+   306→      setDocToRename(null);
+   307→      onDocumentsChanged();
+   308→    } catch (err) {
+   309→      toast.error(err instanceof Error ? err.message : "Renommage impossible");
+   310→    } finally {
+   311→      setSavingRename(false);
+   312→    }
+   313→  };
+   314→
+   315→  const openEditDialog = async (doc: DocumentDTO) => {
+   316→    setDocToEdit({ id: doc.id, title: doc.title, text: "" });
+   317→    setLoadingEditText(true);
+   318→    try {
+   319→      const detail = await fetchDocumentDetail(doc.id);
+   320→      setDocToEdit({ id: doc.id, title: doc.title, text: detail.textContent });
+   321→    } catch (err) {
+   322→      toast.error(err instanceof Error ? err.message : "Impossible de charger le texte");
+   323→      setDocToEdit(null);
+   324→    } finally {
+   325→      setLoadingEditText(false);
+   326→    }
+   327→  };
+   328→
+   329→  const handleSaveText = async () => {
+   330→    if (!docToEdit || savingText) return;
+   331→    setSavingText(true);
+   332→    try {
+   333→      await updateDocument(docToEdit.id, { textContent: docToEdit.text });
+   334→      toast.success("Document mis à jour — index recalculé");
+   335→      setDocToEdit(null);
+   336→      onDocumentsChanged();
+   337→    } catch (err) {
+   338→      toast.error(err instanceof Error ? err.message : "Mise à jour impossible");
+   339→    } finally {
+   340→      setSavingText(false);
+   341→    }
+   342→  };
+   343→
+   344→  const handleMoveDoc = async (doc: DocumentDTO, folderId: string | null) => {
+   345→    try {
+   346→      await updateDocument(doc.id, { folderId });
+   347→      toast.success(
+   348→        folderId
+   349→          ? `« ${doc.title} » déplacé dans « ${folders.find((f) => f.id === folderId)?.name ?? "dossier"} »`
+   350→          : `« ${doc.title} » retiré du dossier`
+   351→      );
+   352→      onDocumentsChanged();
+   353→      void loadFolders();
+   354→    } catch (err) {
+   355→      toast.error(err instanceof Error ? err.message : "Déplacement impossible");
+   356→    }
+   357→  };
+   358→
+   359→  // ----- Derived -----
+   360→
+   361→  const q = search.trim().toLowerCase();
+   362→  const visibleDocs = documents.filter(
+   363→    (doc) =>
+   364→      (activeFolder === "all" || doc.folderId === activeFolder) &&
+   365→      (q.length === 0 || doc.title.toLowerCase().includes(q) || doc.subject.toLowerCase().includes(q))
+   366→  );
+   367→
+   368→  const showAgents = uploading || agents.some((a) => a.status !== "idle");
+   369→  const canImport = Boolean(file) && title.trim().length > 0 && !uploading;
+   370→  const activeFolderObj = folders.find((f) => f.id === activeFolder) ?? null;
+   371→
+   372→  return (
+   373→    <div className="space-y-6">
+   374→      <div>
+   375→        <h1 className="text-2xl font-bold md:text-3xl">Mes cours</h1>
+   376→        <p className="mt-1 text-sm text-muted-foreground">
+   377→          Importez vos documents : les agents les lisent, les découpent et les indexent. Regroupez-les
+   378→          en dossiers thématiques.
+   379→        </p>
+   380→      </div>
+   381→
+   382→      <div className="grid gap-6 lg:grid-cols-5">
+   383→        {/* Upload column */}
+   384→        <div className="space-y-6 lg:col-span-2">
+   385→          <Card>
+   386→            <CardHeader className="pb-2">
+   387→              <CardTitle className="text-base">Importer un cours</CardTitle>
+   388→              <CardDescription>Le contenu est extrait puis indexé pour l&apos;assistant.</CardDescription>
+   389→            </CardHeader>
+   390→            <CardContent className="space-y-4">
+   391→              <div className="space-y-2">
+   392→                <Label htmlFor="doc-title">Titre</Label>
+   393→                <Input
+   394→                  id="doc-title"
+   395→                  value={title}
+   396→                  onChange={(e) => setTitle(e.target.value)}
+   397→                  placeholder="Ex : Maths — Chapitre 3 : dérivées"
+   398→                  disabled={uploading}
+   399→                  className="h-11"
+   400→                />
+   401→              </div>
+   402→              <div className="space-y-2">
+   403→                <Label htmlFor="doc-subject">Matière</Label>
+   404→                <Input
+   405→                  id="doc-subject"
+   406→                  value={subject}
+   407→                  onChange={(e) => setSubject(e.target.value)}
+   408→                  placeholder="Ex : Mathématiques"
+   409→                  disabled={uploading}
+   410→                  className="h-11"
+   411→                />
+   412→              </div>
+   413→
+   414→              <div className="space-y-2">
+   415→                <Label>Fichier</Label>
+   416→                <div
+   417→                  role="button"
+   418→                  tabIndex={0}
+   419→                  aria-label="Choisir un fichier à importer"
+   420→                  onClick={() => inputRef.current?.click()}
+   421→                  onKeyDown={(e) => {
+   422→                    if (e.key === "Enter" || e.key === " ") {
+   423→                      e.preventDefault();
+   424→                      inputRef.current?.click();
+   425→                    }
+   426→                  }}
+   427→                  onDragOver={(e) => {
+   428→                    e.preventDefault();
+   429→                    setDragOver(true);
+   430→                  }}
+   431→                  onDragLeave={() => setDragOver(false)}
+   432→                  onDrop={(e) => {
+   433→                    e.preventDefault();
+   434→                    setDragOver(false);
+   435→                    const f = e.dataTransfer.files?.[0];
+   436→                    if (f) setFile(f);
+   437→                  }}
+   438→                  className={cn(
+   439→                    "cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring",
+   440→                    dragOver && "border-emerald-500 bg-emerald-50"
+   441→                  )}
+   442→                >
+   443→                  <FileUp className="mx-auto size-8 text-muted-foreground" aria-hidden="true" />
+   444→                  <p className="mt-2 text-sm font-medium">
+   445→                    {file ? file.name : "Glissez un fichier ici ou cliquez pour parcourir"}
+   446→                  </p>
+   447→                  <p className="mt-1 text-xs text-muted-foreground">{FORMATS_HINT}</p>
+   448→                </div>
+   449→                <input
+   450→                  ref={inputRef}
+   451→                  type="file"
+   452→                  accept={ACCEPTED}
+   453→                  className="hidden"
+   454→                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+   455→                />
+   456→              </div>
+   457→
+   458→              <Button
+   459→                onClick={() => void handleImport()}
+   460→                disabled={!canImport}
+   461→                className="h-11 w-full bg-emerald-600 text-white hover:bg-emerald-700"
+   462→              >
+   463→                {uploading ? (
+   464→                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+   465→                ) : (
+   466→                  <Upload className="size-4" aria-hidden="true" />
+   467→                )}
+   468→                {uploading ? "Import en cours…" : "Importer"}
+   469→              </Button>
+   470→
+   471→              {success && (
+   472→                <Alert className="border-emerald-200 bg-emerald-50 text-emerald-900">
+   473→                  <CheckCircle2 className="size-4 text-emerald-600" />
+   474→                  <AlertTitle>Import réussi</AlertTitle>
+   475→                  <AlertDescription>✅ {success}</AlertDescription>
+   476→                </Alert>
+   477→              )}
+   478→
+   479→              {showAgents && (
+   480→                <div className="space-y-3 border-t pt-4">
+   481→                  <Progress value={progress} aria-label="Progression de l'import" />
+   482→                  <AgentStatusList agents={agents} />
+   483→                </div>
+   484→              )}
+   485→            </CardContent>
+   486→          </Card>
+   487→        </div>
+   488→
+   489→        {/* Documents list column */}
+   490→        <div className="space-y-4 lg:col-span-3">
+   491→          {/* Folders bar */}
+   492→          <div className="rounded-xl border bg-muted/30 p-3">
+   493→            <div className="mb-2 flex items-center gap-2">
+   494→              <Folder className="size-4 text-emerald-600" aria-hidden="true" />
+   495→              <p className="text-sm font-semibold">Dossiers</p>
+   496→              {activeFolderObj && (
+   497→                <span className="text-xs text-muted-foreground">
+   498→                  — filtré sur « {activeFolderObj.name} »
+   499→                </span>
+   500→              )}
+   501→            </div>
+   502→            <div className="flex flex-wrap items-center gap-1.5">
+   503→              <button
+   504→                type="button"
+   505→                onClick={() => setActiveFolder("all")}
+   506→                aria-pressed={activeFolder === "all"}
+   507→                className={cn(
+   508→                  "min-h-8 rounded-full border px-3 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+   509→                  activeFolder === "all"
+   510→                    ? "border-emerald-600 bg-emerald-600 text-white"
+   511→                    : "border-border bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
+   512→                )}
+   513→              >
+   514→                Tous
+   515→              </button>
+   516→
+   517→              {folders.map((folder) => {
+   518→                const active = activeFolder === folder.id;
+   519→                return (
+   520→                  <div
+   521→                    key={folder.id}
+   522→                    className={cn(
+   523→                      "inline-flex items-center overflow-hidden rounded-full border transition-colors",
+   524→                      active ? "border-emerald-600 bg-emerald-600 text-white" : "border-border bg-transparent"
+   525→                    )}
+   526→                  >
+   527→                    <button
+   528→                      type="button"
+   529→                      onClick={() => setActiveFolder(folder.id)}
+   530→                      aria-pressed={active}
+   531→                      className="flex min-h-8 items-center gap-1.5 px-3 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
+   532→                    >
+   533→                      <span
+   534→                        className="size-2.5 shrink-0 rounded-full border border-black/10"
+   535→                        style={{ backgroundColor: folder.color }}
+   536→                        aria-hidden="true"
+   537→                      />
+   538→                      {folder.name}
+   539→                      <span
+   540→                        className={cn(
+   541→                          "rounded-full px-1.5 text-[10px] tabular-nums",
+   542→                          active ? "bg-white/20" : "bg-muted text-muted-foreground"
+   543→                        )}
+   544→                      >
+   545→                        {folder.documentCount}
+   546→                      </span>
+   547→                    </button>
+   548→                    {active && (
+   549→                      <DropdownMenu>
+   550→                        <DropdownMenuTrigger asChild>
+   551→                          <button
+   552→                            type="button"
+   553→                            aria-label={`Gérer le dossier ${folder.name}`}
+   554→                            className="flex h-8 items-center border-l border-white/20 px-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+   555→                          >
+   556→                            <Pencil className="size-3" aria-hidden="true" />
+   557→                          </button>
+   558→                        </DropdownMenuTrigger>
+   559→                        <DropdownMenuContent align="start">
+   560→                          <DropdownMenuItem onSelect={() => setRenamingFolder({ id: folder.id, name: folder.name })}>
+   561→                            <Pencil aria-hidden="true" />
+   562→                            Renommer
+   563→                          </DropdownMenuItem>
+   564→                          <DropdownMenuItem variant="destructive" onSelect={() => setFolderToDelete(folder)}>
+   565→                            <Trash2 aria-hidden="true" />
+   566→                            Supprimer
+   567→                          </DropdownMenuItem>
+   568→                        </DropdownMenuContent>
+   569→                      </DropdownMenu>
+   570→                    )}
+   571→                  </div>
+   572→                );
+   573→              })}
+   574→
+   575→              {/* Inline create */}
+   576→              <div className="ml-1 flex items-center gap-1.5">
+   577→                <Input
+   578→                  value={newFolderName}
+   579→                  onChange={(e) => setNewFolderName(e.target.value)}
+   580→                  placeholder="Nouveau dossier…"
+   581→                  aria-label="Nom du nouveau dossier"
+   582→                  className="h-8 w-40 text-xs"
+   583→                />
+   584→                <Popover open={createOpen} onOpenChange={setCreateOpen}>
+   585→                  <PopoverTrigger asChild>
+   586→                    <Button
+   587→                      variant="outline"
+   588→                      size="sm"
+   589→                      className="h-8 gap-1.5 text-xs"
+   590→                      disabled={newFolderName.trim().length === 0 || creatingFolder}
+   591→                    >
+   592→                      {creatingFolder ? (
+   593→                        <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+   594→                      ) : (
+   595→                        <FolderPlus className="size-3.5" aria-hidden="true" />
+   596→                      )}
+   597→                      Nouveau dossier
+   598→                    </Button>
+   599→                  </PopoverTrigger>
+   600→                  <PopoverContent className="w-auto p-3" align="start">
+   601→                    <p className="mb-2 text-xs font-medium">Choisis une couleur</p>
+   602→                    <div className="flex items-center gap-2">
+   603→                      {FOLDER_COLORS.map((color) => (
+   604→                        <button
+   605→                          key={color}
+   606→                          type="button"
+   607→                          aria-label={`Créer le dossier avec la couleur ${color}`}
+   608→                          onClick={() => void handleCreateFolder(color)}
+   609→                          disabled={creatingFolder}
+   610→                          className="size-7 rounded-full border border-black/10 outline-none transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-ring"
+   611→                          style={{ backgroundColor: color }}
+   612→                        />
+   613→                      ))}
+   614→                    </div>
+   615→                  </PopoverContent>
+   616→                </Popover>
+   617→              </div>
+   618→            </div>
+   619→          </div>
+   620→
+   621→          {/* Search + heading */}
+   622→          <div className="flex flex-wrap items-center justify-between gap-3">
+   623→            <h2 className="text-lg font-semibold">
+   624→              Mes cours{" "}
+   625→              <span className="text-sm font-normal text-muted-foreground">({visibleDocs.length})</span>
+   626→            </h2>
+   627→            <div className="relative">
+   628→              <Search
+   629→                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+   630→                aria-hidden="true"
+   631→              />
+   632→              <Input
+   633→                value={search}
+   634→                onChange={(e) => setSearch(e.target.value)}
+   635→                placeholder="Rechercher un cours…"
+   636→                aria-label="Rechercher un cours par titre ou matière"
+   637→                className="h-10 w-full pl-9 sm:w-64"
+   638→              />
+   639→            </div>
+   640→          </div>
+   641→
+   642→          {loading ? (
+   643→            <Card className="gap-0 py-0">
+   644→              <CardContent className="flex items-center gap-3 p-6 text-sm text-muted-foreground">
+   645→                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+   646→                Chargement des cours…
+   647→              </CardContent>
+   648→            </Card>
+   649→          ) : visibleDocs.length === 0 ? (
+   650→            <Card className="gap-0 py-0">
+   651→              <CardContent className="flex flex-col items-center gap-2 p-8 text-center">
+   652→                <BookOpenCheck className="size-10 text-muted-foreground" aria-hidden="true" />
+   653→                <p className="text-sm text-muted-foreground">
+   654→                  {documents.length === 0
+   655→                    ? "Aucun cours pour l'instant — importez votre premier document."
+   656→                    : "Aucun cours ne correspond à ce filtre."}
+   657→                </p>
+   658→              </CardContent>
+   659→            </Card>
+   660→          ) : (
+   661→            <div className="scroll-thin max-h-[520px] space-y-3 overflow-y-auto pr-1">
+   662→              {visibleDocs.map((doc) => (
+   663→                <Card key={doc.id} className="gap-0 py-0">
+   664→                  <CardContent className="p-4">
+   665→                    <div className="flex items-start justify-between gap-3">
+   666→                      <div className="min-w-0">
+   667→                        <div className="flex flex-wrap items-center gap-2">
+   668→                          <p className="max-w-full truncate font-medium">{doc.title}</p>
+   669→                          <Badge variant="secondary">{doc.subject}</Badge>
+   670→                          <Badge
+   671→                            variant="outline"
+   672→                            className={cn(
+   673→                              "text-[10px] font-semibold uppercase",
+   674→                              doc.language === "en"
+   675→                                ? "border-amber-300 bg-amber-50 text-amber-700"
+   676→                                : "border-emerald-300 bg-emerald-50 text-emerald-700"
+   677→                            )}
+   678→                          >
+   679→                            {doc.language === "en" ? "EN" : "FR"}
+   680→                          </Badge>
+   681→                          <Badge variant="outline" className="uppercase">
+   682→                            {doc.kind}
+   683→                          </Badge>
+   684→                          {doc.folderName && (
+   685→                            <Badge variant="outline" className="gap-1 text-[10px]">
+   686→                              <span
+   687→                                className="size-2 rounded-full border border-black/10"
+   688→                                style={{ backgroundColor: doc.folderColor ?? "#78716c" }}
+   689→                                aria-hidden="true"
+   690→                              />
+   691→                              {doc.folderName}
+   692→                            </Badge>
+   693→                          )}
+   694→                        </div>
+   695→                        <p className="mt-1 text-xs text-muted-foreground">
+   696→                          {doc.chunks} segments · {doc.chars.toLocaleString("fr-FR")} caractères ·{" "}
+   697→                          {doc.qaCount} question{doc.qaCount > 1 ? "s" : ""} ·{" "}
+   698→                          {new Date(doc.createdAt).toLocaleDateString("fr-FR")}
+   699→                        </p>
+   700→                        {doc.note ? (
+   701→                          <p className="mt-1 text-xs text-muted-foreground">{doc.note}</p>
+   702→                        ) : null}
+   703→                      </div>
+   704→
+   705→                      <DropdownMenu>
+   706→                        <DropdownMenuTrigger asChild>
+   707→                          <Button
+   708→                            variant="ghost"
+   709→                            size="icon"
+   710→                            className="size-10 shrink-0 text-muted-foreground hover:text-foreground"
+   711→                            aria-label={`Actions pour ${doc.title}`}
+   712→                          >
+   713→                            <MoreHorizontal className="size-4" aria-hidden="true" />
+   714→                          </Button>
+   715→                        </DropdownMenuTrigger>
+   716→                        <DropdownMenuContent align="end" className="w-56">
+   717→                          {onRevise && (
+   718→                            <DropdownMenuItem
+   719→                              onSelect={() => onRevise(doc.id)}
+   720→                              className="text-emerald-700 data-[variant=default]:text-emerald-700"
+   721→                            >
+   722→                              <BookOpenCheck aria-hidden="true" />
+   723→                              Réviser
+   724→                            </DropdownMenuItem>
+   725→                          )}
+   726→                          {onRevise && (
+   727→                            <DropdownMenuItem onSelect={() => onRevise(doc.id)}>
+   728→                              <Headphones aria-hidden="true" />
+   729→                              Écouter
+   730→                            </DropdownMenuItem>
+   731→                          )}
+   732→                          <DropdownMenuSeparator />
+   733→                          <DropdownMenuItem onSelect={() => setDocToRename({ id: doc.id, title: doc.title })}>
+   734→                            <Pencil aria-hidden="true" />
+   735→                            Renommer
+   736→                          </DropdownMenuItem>
+   737→                          <DropdownMenuItem onSelect={() => void openEditDialog(doc)}>
+   738→                            <FileUp aria-hidden="true" />
+   739→                            Modifier le texte
+   740→                          </DropdownMenuItem>
+   741→                          <DropdownMenuSub>
+   742→                            <DropdownMenuSubTrigger>
+   743→                              <FolderSymlink aria-hidden="true" />
+   744→                              Déplacer vers…
+   745→                            </DropdownMenuSubTrigger>
+   746→                            <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+   747→                              {folders.map((folder) => (
+   748→                                <DropdownMenuItem
+   749→                                  key={folder.id}
+   750→                                  disabled={doc.folderId === folder.id}
+   751→                                  onSelect={() => void handleMoveDoc(doc, folder.id)}
+   752→                                >
+   753→                                  <span
+   754→                                    className="size-2.5 rounded-full border border-black/10"
+   755→                                    style={{ backgroundColor: folder.color }}
+   756→                                    aria-hidden="true"
+   757→                                  />
+   758→                                  {folder.name}
+   759→                                </DropdownMenuItem>
+   760→                              ))}
+   761→                              <DropdownMenuSeparator />
+   762→                              <DropdownMenuItem
+   763→                                disabled={!doc.folderId}
+   764→                                onSelect={() => void handleMoveDoc(doc, null)}
+   765→                              >
+   766→                                Aucun dossier
+   767→                              </DropdownMenuItem>
+   768→                            </DropdownMenuSubContent>
+   769→                          </DropdownMenuSub>
+   770→                          <DropdownMenuSeparator />
+   771→                          <DropdownMenuItem variant="destructive" onSelect={() => setDocToDelete(doc)}>
+   772→                            <Trash2 aria-hidden="true" />
+   773→                            Supprimer
+   774→                          </DropdownMenuItem>
+   775→                        </DropdownMenuContent>
+   776→                      </DropdownMenu>
+   777→                    </div>
+   778→                  </CardContent>
+   779→                </Card>
+   780→              ))}
+   781→            </div>
+   782→          )}
+   783→        </div>
+   784→      </div>
+   785→
+   786→      {/* ----- Dialogs ----- */}
+   787→
+   788→      {/* Rename folder */}
+   789→      <Dialog open={Boolean(renamingFolder)} onOpenChange={(open) => !open && setRenamingFolder(null)}>
+   790→        <DialogContent className="sm:max-w-sm">
+   791→          <DialogHeader>
+   792→            <DialogTitle>Renommer le dossier</DialogTitle>
+   793→            <DialogDescription>Les cours du dossier sont conservés.</DialogDescription>
+   794→          </DialogHeader>
+   795→          <Input
+   796→            value={renamingFolder?.name ?? ""}
+   797→            onChange={(e) =>
+   798→              setRenamingFolder((prev) => (prev ? { ...prev, name: e.target.value } : prev))
+   799→            }
+   800→            onKeyDown={(e) => {
+   801→              if (e.key === "Enter") void handleRenameFolder();
+   802→            }}
+   803→            aria-label="Nouveau nom du dossier"
+   804→            className="h-11"
+   805→          />
+   806→          <DialogFooter>
+   807→            <Button variant="outline" onClick={() => setRenamingFolder(null)}>
+   808→              Annuler
+   809→            </Button>
+   810→            <Button
+   811→              onClick={() => void handleRenameFolder()}
+   812→              disabled={savingFolder || !renamingFolder?.name.trim()}
+   813→              className="bg-emerald-600 text-white hover:bg-emerald-700"
+   814→            >
+   815→              {savingFolder && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
+   816→              Enregistrer
+   817→            </Button>
+   818→          </DialogFooter>
+   819→        </DialogContent>
+   820→      </Dialog>
+   821→
+   822→      {/* Delete folder (docs kept) */}
+   823→      <AlertDialog
+   824→        open={Boolean(folderToDelete)}
+   825→        onOpenChange={(open) => !open && setFolderToDelete(null)}
+   826→      >
+   827→        <AlertDialogContent>
+   828→          <AlertDialogHeader>
+   829→            <AlertDialogTitle>Supprimer le dossier « {folderToDelete?.name} » ?</AlertDialogTitle>
+   830→            <AlertDialogDescription>
+   831→              Les {folderToDelete?.documentCount ?? 0} cours de ce dossier sont conservés et
+   832→              redeviennent « sans dossier ». Seul le dossier est supprimé.
+   833→            </AlertDialogDescription>
+   834→          </AlertDialogHeader>
+   835→          <AlertDialogFooter>
+   836→            <AlertDialogCancel>Annuler</AlertDialogCancel>
+   837→            <AlertDialogAction
+   838→              className="bg-red-600 text-white hover:bg-red-700"
+   839→              onClick={() => void handleDeleteFolder()}
+   840→            >
+   841→              Supprimer le dossier
+   842→            </AlertDialogAction>
+   843→          </AlertDialogFooter>
+   844→        </AlertDialogContent>
+   845→      </AlertDialog>
+   846→
+   847→      {/* Rename document */}
+   848→      <Dialog open={Boolean(docToRename)} onOpenChange={(open) => !open && setDocToRename(null)}>
+   849→        <DialogContent className="sm:max-w-sm">
+   850→          <DialogHeader>
+   851→            <DialogTitle>Renommer le cours</DialogTitle>
+   852→            <DialogDescription>Le titre apparaît dans les listes et la révision.</DialogDescription>
+   853→          </DialogHeader>
+   854→          <Input
+   855→            value={docToRename?.title ?? ""}
+   856→            onChange={(e) => setDocToRename((prev) => (prev ? { ...prev, title: e.target.value } : prev))}
+   857→            onKeyDown={(e) => {
+   858→              if (e.key === "Enter") void handleRenameDoc();
+   859→            }}
+   860→            aria-label="Nouveau titre du cours"
+   861→            className="h-11"
+   862→          />
+   863→          <DialogFooter>
+   864→            <Button variant="outline" onClick={() => setDocToRename(null)}>
+   865→              Annuler
+   866→            </Button>
+   867→            <Button
+   868→              onClick={() => void handleRenameDoc()}
+   869→              disabled={savingRename || !docToRename?.title.trim()}
+   870→              className="bg-emerald-600 text-white hover:bg-emerald-700"
+   871→            >
+   872→              {savingRename && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
+   873→              Enregistrer
+   874→            </Button>
+   875→          </DialogFooter>
+   876→        </DialogContent>
+   877→      </Dialog>
+   878→
+   879→      {/* Edit text content */}
+   880→      <Dialog
+   881→        open={Boolean(docToEdit)}
+   882→        onOpenChange={(open) => !open && !savingText && setDocToEdit(null)}
+   883→      >
+   884→        <DialogContent className="sm:max-w-2xl">
+   885→          <DialogHeader>
+   886→            <DialogTitle>Modifier « {docToEdit?.title} »</DialogTitle>
+   887→            <DialogDescription>
+   888→              Le texte est réindexé après enregistrement — l&apos;assistant répondra avec la nouvelle
+   889→              version.
+   890→            </DialogDescription>
+   891→          </DialogHeader>
+   892→          {loadingEditText ? (
+   893→            <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+   894→              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+   895→              Chargement du texte…
+   896→            </div>
+   897→          ) : (
+   898→            <Textarea
+   899→              rows={10}
+   900→              value={docToEdit?.text ?? ""}
+   901→              onChange={(e) => setDocToEdit((prev) => (prev ? { ...prev, text: e.target.value } : prev))}
+   902→              aria-label="Contenu du document"
+   903→              className="scroll-thin max-h-[50vh] min-h-48 resize-none font-mono text-xs"
+   904→            />
+   905→          )}
+   906→          <DialogFooter>
+   907→            <Button variant="outline" onClick={() => setDocToEdit(null)} disabled={savingText}>
+   908→              Annuler
+   909→            </Button>
+   910→            <Button
+   911→              onClick={() => void handleSaveText()}
+   912→              disabled={savingText || loadingEditText}
+   913→              className="bg-emerald-600 text-white hover:bg-emerald-700"
+   914→            >
+   915→              {savingText && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
+   916→              Enregistrer
+   917→            </Button>
+   918→          </DialogFooter>
+   919→        </DialogContent>
+   920→      </Dialog>
+   921→
+   922→      {/* Delete document (existing confirm) */}
+   923→      <AlertDialog open={Boolean(docToDelete)} onOpenChange={(open) => !open && setDocToDelete(null)}>
+   924→        <AlertDialogContent>
+   925→          <AlertDialogHeader>
+   926→            <AlertDialogTitle>Supprimer ce cours ?</AlertDialogTitle>
+   927→            <AlertDialogDescription>
+   928→              « {docToDelete?.title} » et ses {docToDelete?.chunks ?? 0} segments indexés seront
+   929→              définitivement supprimés. L&apos;assistant ne pourra plus y répondre.
+   930→            </AlertDialogDescription>
+   931→          </AlertDialogHeader>
+   932→          <AlertDialogFooter>
+   933→            <AlertDialogCancel>Annuler</AlertDialogCancel>
+   934→            <AlertDialogAction
+   935→              className="bg-red-600 text-white hover:bg-red-700"
+   936→              onClick={() => docToDelete && void handleDeleteDoc(docToDelete.id)}
+   937→            >
+   938→              Supprimer
+   939→            </AlertDialogAction>
+   940→          </AlertDialogFooter>
+   941→        </AlertDialogContent>
+   942→      </AlertDialog>
+   943→    </div>
+   944→  );
+   945→}
+   946→

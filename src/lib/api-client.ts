@@ -282,3 +282,33 @@ export async function ttsToBlob(body: TtsRequestBody): Promise<Blob> {
   if (!res.ok) throw new ApiError(await extractMessage(res), res.status);
   return await res.blob();
 }
+
+// ---------- Scanned documents: OCR correction & PDF conversion ----------
+
+/**
+ * Saves the corrected OCR text of a scanned document and converts it into a
+ * clean PDF (the agents read the corrected text first, so revision can start
+ * right after). Returns the updated detail: kind becomes "pdf", status "prêt".
+ */
+export async function savePdf(id: string, text: string): Promise<DocumentDetailDTO> {
+  const res = await fetch(`/api/documents/${encodeURIComponent(id)}/save-pdf`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new ApiError(await extractMessage(res), res.status);
+  return unwrap<DocumentDetailDTO>(await res.json(), "document");
+}
+
+/** Downloads the generated PDF as a Blob (throws if it has not been generated yet). */
+export async function fetchDocumentPdf(id: string): Promise<Blob> {
+  const res = await fetch(`/api/documents/${encodeURIComponent(id)}/pdf`);
+  if (!res.ok) {
+    let message = "PDF non encore généré — corrige d'abord le texte.";
+    if (res.headers.get("content-type")?.includes("application/json")) {
+      message = await extractMessage(res);
+    }
+    throw new ApiError(message, res.status);
+  }
+  return await res.blob();
+}

@@ -171,3 +171,69 @@ Work Log:
 Stage Summary:
 - Feature set verified end-to-end in a real browser: import→auto-revision greeting→adaptive coaching→evaluation→self-assessment→clear/show/sort/export→TTS before/during/after→ASR mic wiring→folders/renaming/editing→EN/FR detection→persistent self-learning memory.
 - Test data left: 6 docs (5 FR + 1 EN), folder "Théologie Biblique", 2 revision QAs on Photosynthèse, 3 memory insights — user can explore immediately.
+
+---
+Task ID: 2-c
+Agent: full-stack-developer
+Task: Backend — EPUB + audio ingestion (ffmpeg/ASR), scanned-doc review status, save-pdf (pdf-lib) + PDF serving
+
+Work Log:
+- Read worklog (tasks 1/2/2-a/2-b/3), frozen src/lib/types.ts (untouched), ingestion.ts, documents routes, asr/tts/search/db.
+- src/lib/ingestion.ts:
+  - SUPPORTED_EXTENSIONS += .epub, .mp3, .wav, .m4a, .ogg, .webm, .aac, .flac; KIND_OVERRIDES in kindFromFileName maps all audio extensions → kind "audio" (others keep ext-derived kind).
+  - epubToText(buffer) via adm-zip (no XML parser dep): container.xml → <rootfile full-path> → OPF regex-parsed (manifest id→href/media-type, spine itemref order) → spine XHTML/HTML entries (media-type or .xhtml/.html/.htm), hrefs resolved relative to OPF dir (normalizeZipPath handles ../, ./, leading /, URL-decode, #anchors, case-insensitive entry fallback). htmlToText: strips script/style/head + comments, <br> & closing p/div/h1-6/li/tr/section/article/blockquote/figcaption/dd/dt → \n, strips remaining tags, decodes &lt; &gt; &quot; &apos; &nbsp; + numeric &#NNN;/&#xNN; (safeCodePoint guards surrogates/control codes) + ~40 common named entities (French/Latin-1 focus: &eacute; &egrave; &mdash; &oelig; …) with &amp; decoded LAST (single-pass, "&amp;lt;" stays "&lt;"), collapses 3+ \n → 2. French "EPUB illisible : …" errors (archive corrompue / container.xml manquant / rootfile sans full-path / OPF introuvable / manifest vide / aucun chapitre). Empty chapters skipped; chapters joined "\n\n"; returns {text, chapters}.
+  - transcribeAudioFile(buffer, fileName, onProgress): 80 MB guard ("Fichier audio trop volumineux (max 80 Mo). Découpe-le ou convertis-le en mp3."), tmp /tmp/ad-audio-<ts>/input.<ext>, ffmpeg -vn -f segment -segment_time 420 -ac 1 -ar 16000 seg_%03d.wav (execFileAsync timeout 300 s) → French error "Conversion audio impossible (ffmpeg indisponible) : …" on failure; readdir+sort segments, per-segment base64 → getZaiClient().audio.asr.create({file_base64}) with the same multi-shape .text/.data.text extraction as /api/asr; failed segment → " [segment N non transcrit]" marker + continue; onProgress(`Transcription : segment i/total…`); join " " + collapse whitespace; all-empty (markers stripped) → "Aucune parole détectée dans le fichier audio."; temp dir rmSync recursive+force in finally.
+  - extractText gains optional 3rd param onProgress, new "epub" branch (method "EPUB — N chapitre(s) extrait(s)", pages null) and "audio" branch (method "Transcription audio (ASR) — N segment(s)").
+- src/lib/doc-dto.ts (NEW): getDocumentDetailDTO(id) — DocumentDetailDTO mapper identical to the frozen [id]/route.ts logic (no auto-heal), used by save-pdf only.
+- src/app/api/documents/route.ts: extractText call passes onProgress → agent.log events on "reader" (same emit pattern); upload size guard now 80 MB for audio kind / 25 MB otherwise (dynamic message); invalid-format message lists EPUB + audio formats; after extraction, OCR image kinds (png/jpg/jpeg/webp) create with status "à vérifier" and note "Extraction : {method} — vérifie les mots mal reconnus avant d'enregistrer en PDF." (+ " Peu de texte détecté — la photo est-elle nette et complète ?" when text < 40 chars); other kinds keep "prêt". ingest.done DTO unchanged (status field already in contract).
+- NEW POST src/app/api/documents/[id]/save-pdf/route.ts (runtime nodejs, force-dynamic): validates id (safe-char regex) + {text} non-empty (400 FR) + doc exists (404); step order per spec: 1) chunkText re-chunk in $transaction (deleteMany chunks → update doc {textContent, chars, chunks, kind "pdf", status "prêt", fileName `${sanitized title}.pdf` [strip non \p{L}\p{N}/space/dash, collapse spaces, ≤80, ".pdf", fallback "cours.pdf"], note "Texte corrigé par l'élève — PDF généré."} → createMany chunks) → 2) buildCoursePdf (pdf-lib: A4 595.28×841.89, margins 56, Helvetica + Helvetica-Bold, title bold 18 wrapped, subject + fr-FR date line 10 pt gray, body 11 pt / line height 16, font-measured greedy word wrap (≈95 chars) with hard-slice for pathological tokens, blank \n → 8 pt spacing, page break under margin, 200-page cap + bottom "... (tronqué)" note, WinAnsi sanitization: curly quotes/apostrophes→', dashes→-, …→..., nbsp→space, bullet→-, tab→2 spaces, then drop chars outside CP1252 set — French accents « » é è ç pass through) → 3) fs.writeFileSync /home/z/my-project/upload/documents/{id}.pdf (mkdir recursive) → 4) invalidateSearchCache() → 5) 200 DocumentDetailDTO via doc-dto helper. PDF-gen failure → 500 FR (DB already committed per specified order).
+- NEW GET src/app/api/documents/[id]/pdf/route.ts: safe-id + doc lookup → 404 {message "PDF non encore généré pour ce cours."} if doc/file missing; serves upload/documents/{id}.pdf with Content-Type application/pdf, Content-Disposition inline (ASCII fallback filename + filename*=UTF-8''), Content-Length, Cache-Control no-store.
+- No changes to: types.ts, prisma schema, documents/[id]/route.ts (auto-heal untouched), sse-client, api-client, frontend files. Dev server not restarted.
+
+Verified with curl (hot-reload server :3000):
+- EPUB (hand-built minimal 2-chapter epub via zip CLI: mimetype stored, container.xml, OPF w/ manifest+spine incl. nested OEBPS/text/ch2.xhtml + css item + <script>): SSE ingest.done {kind "epub", chars 358, note "Extraction : EPUB — 2 chapitres extraits", status "prêt"}; detail textContent contains both chapters with entities decoded (— – é è ê ' « », &amp;→&), script/style/head stripped, <br>/<li> → newlines.
+- Audio: /api/tts French text → speech.wav (RIFF PCM 24 kHz) upload → SSE reader logs "Transcription : segment 1/1…", ingest.done {kind "audio", note "Extraction : Transcription audio (ASR) — 1 segment"}, textContent non-empty (ASR output mangled by the engine but pipeline end-to-end OK). ffmpeg sine 440 Hz → hallucinated tiny text → clean ingest.error at chunker ("Aucun texte exploitable après découpage."). speech.mp3 (different ext) → same pipeline OK.
+- PNG (sharp SVG→PNG): ingest.done {kind "png", status "à vérifier", note "Extraction : OCR (vision) — vérifie les mots mal reconnus avant d'enregistrer en PDF."} (201 chars → no short-text hint, as designed).
+- save-pdf on that doc: 200 DocumentDetailDTO {kind "pdf", status "prêt", fileName "Maths - Les fractions photo.pdf", note "Texte corrigé par l'élève — PDF généré.", chunks re-counted, textContent updated}; file exists (1417 o); GET …/pdf → 200 application/pdf, content-length 1417, bytes identical (cmp OK), pdftotext shows title/subject-date/accents; 400 empty text, 404 unknown doc, 404 PDF never generated (FR messages); long-doc tests: 303 k chars → 67 pages 1.1 s; 960 k chars → exactly 200 pages + "(tronqué)" 1.8 s.
+- GET /api/documents list shows new kinds (epub/audio/pdf→pdf) + updated notes; /api/stats chunks 235 after re-chunks; unsupported .rtf → new formats message. bun run lint: PASS (0 errors, 0 warnings). dev.log: only 200/400/404 as designed, no compile/runtime errors from task files.
+
+Stage Summary:
+- Ingestion now covers PDF, DOCX, EPUB (regex-parsed OPF/spine), TXT/MD, images (OCR) and 7 audio formats (ffmpeg 7-min 16 kHz mono segments → built-in ASR, per-segment progress + fault tolerance) — extractText(files, buffer, onProgress?) streams progress into the Lecteur agent.
+- Scanned/photo imports land as status "à vérifier" with a proof-read note; the student corrects text → POST /api/documents/[id]/save-pdf re-chunks (same chunkText), stores kind "pdf"/status "prêt"/sanitized fileName/note, writes a clean A4 Helvetica PDF (accents-safe WinAnsi, 200-page cap) to upload/documents/{id}.pdf, invalidates BM25 cache, returns the detail DTO; GET /api/documents/[id]/pdf serves it inline.
+- Files: modified src/lib/ingestion.ts, src/app/api/documents/route.ts; created src/lib/doc-dto.ts, src/app/api/documents/[id]/save-pdf/route.ts, src/app/api/documents/[id]/pdf/route.ts.
+- Deviations: (1) ExtractResult.note doesn't exist — shape is {text, pages, method}, so the EPUB count lives in method → route note "Extraction : EPUB — N chapitres extraits" (spec's "adapt to the actual shape"); (2) audio upload limit raised to 80 Mo at the route guard for audio kinds only (otherwise the 80 MB extractText guard was unreachable behind the 25 MB check); (3) entity decoding extended beyond the listed set with ~40 common French/Latin-1 named entities (strict superset, same single-pass decode, &amp; last); (4) pdf line wrap uses font.widthOfTextAtSize (≈95 chars/line at 11 pt) instead of a hard 95-char cut so lines never overflow the margin; short-OCR hint threshold is text.trim().length < 40.
+
+---
+Task ID: 2-d
+Agent: full-stack-developer (recovered by main — agent hit context deadline after implementation, before verification/worklog)
+Task: Frontend — audio reader UX (auto-select, preparation state), new import formats UI, scanned-doc correction dialog + save-as-PDF flow
+
+Work Log:
+- revision-section.tsx: auto-select most recent doc on mount when none selected (line ~430), "Préparation du document pour la lecture…" loading state (line ~990), error Alert + Réessayer in audio card, empty-text hint.
+- documents-section.tsx: accept = pdf,docx,txt,md,epub,png,jpg,jpeg,webp,mp3,wav,m4a,ogg,webm,aac,flac; format hint "PDF, DOCX, TXT, EPUB, MP3/WAV (transcrit), PNG/JPG (OCR) — 80 Mo max"; kind badges (EPUB=BookOpen, Audio=AudioLines amber, Image, PDF); status "à vérifier" amber PenLine badge (clickable → review dialog); post-ingest auto-open of ReviewDialog when doc.status === "à vérifier"; menu actions "Corriger le texte (OCR)" + "Ouvrir le PDF" (blob fetch + object URL, French error toast if 404).
+- review-dialog.tsx created: editable textarea pre-filled with OCR textContent (fetched via fetchDocumentDetail), amber OCR explanation alert, [Enregistrer en PDF] (savePdf → toast → onDocumentsChanged + onImported(updatedDoc) → Révision greet), [Enregistrer sans PDF] (updateDocument), [Plus tard].
+- api-client.ts: savePdf(id, text) + fetchDocumentPdf(id) → Blob appended.
+- Main agent verified all pieces present + lint PASS after timeout.
+
+Stage Summary:
+- All frontend deliverables landed; E2E done by main (Task 4 below).
+
+---
+Task ID: 4
+Agent: main (Z.ai Code)
+Task: Audio repair (legacy docs), E2E verification of new formats + scanned flow, mobile fix, cleanup
+
+Work Log:
+- AUDIO BUG ROOT CAUSE: 3 legacy PDFs (pre-textContent column) had textContent="" → play button disabled (disabled={detail.textContent.trim().length===0}). FIX: auto-heal in GET /api/documents/[id] — rebuilds textContent from ordered chunks on first open and persists it. Verified: Doctrines Bibliques 0 → 85 159 chars; play → "Segment 1 / 666", POST /api/tts 200 (487 KB wav); button ACTIVÉ on desktop + auto-select most recent doc.
+- EPUB E2E (UI): "Les Volcans (EPUB)" uploaded → "Extraction : EPUB — 2 chapitres extraits" → auto-redirect Révision + greet. EPUB badge in list.
+- AUDIO E2E: TTS-generated French speech mp3 uploaded → ASR transcription "segment 1/1 — texte extrait", doc kind audio, 268 chars, révisable/TTS-able like any course.
+- SCANNED FLOW E2E (UI): PNG (mitose, sharp-rendered text) → VLM OCR → status "à vérifier" → ReviewDialog auto-opens → corrected text → "Enregistrer en PDF" → doc kind pdf/status prêt/fileName "La Mitose scan.pdf"/note "Texte corrigé par l'élève — PDF généré", chunks re-indexed BEFORE response, upload/documents/{id}.pdf (1210 B, PDF 1.7) served via GET /pdf HTTP 200 → auto-redirect Révision with greet. Agents "pris connaissance" avant la fin de sauvegarde ✓.
+- "Ouvrir le PDF": menu item present for kind pdf; underlying fetch verified HTTP 200 application/pdf (Radix menu closes between evals — tooling limitation, code path + API verified).
+- MOBILE FIX: horizontal overflow (scrollW 464) caused by folder-bar header span "— filtré sur « … »" not shrinking → added min-w-0/flex-wrap/truncate. Re-verified scrollW=375.
+- CLEANUP: deleted 7 agent test docs; kept 9 (3 new-format demos + user courses).
+- bun run lint PASS; dev.log clean; console errors 0.
+
+Stage Summary:
+- Audio fixed everywhere incl. legacy docs (auto-heal on course open = "il parcourt le document pour la lecture" as requested).
+- New formats live: EPUB (chapters), audio mp3/wav/m4a/ogg/webm/aac/flac (ffmpeg split → ASR), scanned/handwritten images (OCR → human correction → clean PDF → agents indexed → revision starts).
+- Demos kept: Les Volcans (EPUB), Les Séismes (audio), La Mitose (scan→PDF corrigé), The Water Cycle (EN).

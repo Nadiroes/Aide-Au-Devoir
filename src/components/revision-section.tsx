@@ -14,10 +14,12 @@ import {
   EyeOff,
   Headphones,
   HelpCircle,
+  AlertTriangle,
   Loader2,
   Mic,
   Pause,
   Play,
+  RotateCcw,
   SendHorizonal,
   SkipForward,
   Sparkles,
@@ -29,6 +31,7 @@ import { motion } from "framer-motion";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -418,6 +421,15 @@ export function RevisionSection({
   useEffect(() => {
     if (recorder.error) toast.error(recorder.error);
   }, [recorder.error]);
+
+  // Auto-select the most recent course when entering the tab with nothing
+  // selected (documents arrive sorted by createdAt desc → documents[0] is
+  // the newest). Never overrides an existing selection.
+  useEffect(() => {
+    if (!selectedDocumentId && documents.length > 0) {
+      onSelectDocument(documents[0].id);
+    }
+  }, [documents, selectedDocumentId, onSelectDocument]);
 
   // Load persisted TTS preferences once.
   useEffect(() => {
@@ -950,8 +962,8 @@ export function RevisionSection({
               </CardContent>
             </Card>
 
-            {/* Audio reader — always available */}
-            {detail && (
+            {/* Audio reader — preparation state while the document loads */}
+            {(detailLoading || detail) && (
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="flex items-center gap-2 text-base">
@@ -963,6 +975,27 @@ export function RevisionSection({
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  {detailLoading && !detail ? (
+                    <div
+                      className="flex items-center gap-3 rounded-lg border border-dashed bg-muted/30 px-4 py-6"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      <Loader2
+                        className="size-5 shrink-0 animate-spin text-emerald-600"
+                        aria-hidden="true"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium">
+                          Préparation du document pour la lecture…
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Le texte du cours est assemblé pour la synthèse vocale.
+                        </p>
+                      </div>
+                    </div>
+                  ) : detail ? (
+                    <>
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
                       type="button"
@@ -987,7 +1020,7 @@ export function RevisionSection({
                           ? "Mettre la lecture en pause"
                           : "Lancer la lecture audio du cours"
                       }
-                      className="h-11 min-w-11 gap-2 bg-emerald-600 px-4 text-white hover:bg-emerald-700"
+                      className="h-12 gap-2 bg-emerald-600 px-5 text-white hover:bg-emerald-700"
                     >
                       {player.status === "loading" ? (
                         <Loader2 className="size-5 animate-spin" aria-hidden="true" />
@@ -1088,10 +1121,57 @@ export function RevisionSection({
                   )}
 
                   {player.error && (
-                    <p className="text-xs text-red-600" role="alert">
-                      {player.error}
-                    </p>
+                    <Alert variant="destructive" role="alert">
+                      <AlertTriangle className="size-4" />
+                      <AlertTitle>Lecture audio impossible</AlertTitle>
+                      <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                        <span>{player.error}</span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            detail &&
+                            player.play(detail.textContent, {
+                              voice: voice === "auto" ? undefined : voice,
+                              speed,
+                              language,
+                            })
+                          }
+                          className="h-9 gap-1.5 border-red-200 bg-white text-red-700 hover:bg-red-50"
+                        >
+                          <RotateCcw className="size-3.5" aria-hidden="true" />
+                          Réessayer
+                        </Button>
+                      </AlertDescription>
+                    </Alert>
                   )}
+
+                  {detail.textContent.trim().length === 0 && (
+                    <Alert className="border-amber-200 bg-amber-50">
+                      <AlertTriangle className="size-4 text-amber-600" />
+                      <AlertTitle className="text-amber-900">
+                        Ce cours n&apos;a pas de texte lisible.
+                      </AlertTitle>
+                      <AlertDescription className="text-amber-800">
+                        <span>
+                          Réimporte-le ou modifie son texte depuis l&apos;onglet Cours.
+                        </span>
+                        {onOpenCourses && (
+                          <Button
+                            type="button"
+                            variant="link"
+                            onClick={onOpenCourses}
+                            className="h-auto p-0 text-emerald-700 underline underline-offset-2 hover:text-emerald-800"
+                          >
+                            Ouvrir les cours
+                          </Button>
+                        )}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                    </>
+                  ) : null}
                 </CardContent>
               </Card>
             )}

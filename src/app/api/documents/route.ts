@@ -15,6 +15,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_SIZE = 25 * 1024 * 1024; // 25 MB
+const MAX_AUDIO_SIZE = 80 * 1024 * 1024; // 80 MB — audio is chunked server-side before ASR
 
 /** Freshly created document (POST path) — no folder, no Q&A yet. */
 function toIngestDTO(d: {
@@ -112,9 +113,16 @@ export async function POST(req: NextRequest) {
     if (!form) return "Requête invalide (formulaire manquant).";
     if (!(file instanceof File)) return "Aucun fichier reçu.";
     if (!title) return "Le titre du cours est obligatoire.";
-    if (file.size > MAX_SIZE) return "Fichier trop volumineux (max 25 Mo).";
-    if (!kindFromFileName(file.name))
-      return "Format non supporté. Formats acceptés : PDF, DOCX, TXT, MD, PNG, JPEG, WEBP.";
+    const uploadKind = kindFromFileName(file.name);
+    if (!uploadKind) {
+      return (
+        "Format non supporté. Formats acceptés : PDF, DOCX, EPUB, TXT, MD, PNG, JPEG, WEBP, " +
+        "MP3, WAV, M4A, OGG, WEBM, AAC, FLAC."
+      );
+    }
+    const maxSize = uploadKind === "audio" ? MAX_AUDIO_SIZE : MAX_SIZE;
+    if (file.size > maxSize)
+      return `Fichier trop volumineux (max ${Math.round(maxSize / (1024 * 1024))} Mo).`;
     return null;
   })();
 
@@ -145,7 +153,9 @@ export async function POST(req: NextRequest) {
     let method = "";
     try {
       const buffer = Buffer.from(await f.arrayBuffer());
-      const result = await extractText(f.name, buffer);
+      const result = await extractText(f.name, buffer, (message) => {
+        emit({ type: "agent.log", id: "reader", message } satisfies IngestEvent);
+      });
       text = result.text;
       method = result.method;
       emit({
@@ -209,6 +219,17 @@ export async function POST(req: NextRequest) {
       message: `Indexation de ${chunks.length} segment(s) pour la recherche…`,
     } satisfies IngestEvent);
 
+    // Scanned / photographed pages (OCR) keep a "to review" status until the
+    // student proof-reads the recognized words and saves them as a clean PDF.
+    const isOcrImage = kind === "png" || kind === "jpg" || kind === "jpeg" || kind === "webp";
+    let note = `Extraction : ${method}`;
+    if (isOcrImage) {
+      note += " — vérifie les mots mal reconnus avant d'enregistrer en PDF.";
+      if (text.trim().length < 40) {
+        note += " Peu de texte détecté — la photo est-elle nette et complète ?";
+      }
+    }
+
     try {
       const language = detectLanguage(text);
       const doc = await db.document.create({
@@ -217,10 +238,10 @@ export async function POST(req: NextRequest) {
           subject,
           kind,
           fileName: f.name,
-          status: "prêt",
+          status: isOcrImage ? "à vérifier" : "prêt",
           chunks: chunks.length,
           chars: text.length,
-          note: `Extraction : ${method}`,
+          note,
           language,
           textContent: text,
           folderId,

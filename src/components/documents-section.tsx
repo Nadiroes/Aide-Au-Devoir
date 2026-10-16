@@ -2,21 +2,27 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AudioLines,
+  BookOpen,
+  BookOpenCheck,
   CheckCircle2,
   Eye,
+  FileText,
   FileUp,
   Folder,
   FolderPlus,
   FolderSymlink,
   Headphones,
-  BookOpenCheck,
+  Image as ImageIcon,
   Loader2,
   MoreHorizontal,
+  PenLine,
   Pencil,
   Search,
   Trash2,
   Upload,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,18 +60,48 @@ import {
   deleteDocument,
   deleteFolder,
   fetchDocumentDetail,
+  fetchDocumentPdf,
   fetchFolders,
   updateDocument,
   updateFolder,
 } from "@/lib/api-client";
 import { INGEST_AGENT_ORDER } from "@/lib/types";
-import type { DocumentDTO, FolderDTO, IngestEvent } from "@/lib/types";
+import type { DocumentDTO, DocumentDetailDTO, FolderDTO, IngestEvent } from "@/lib/types";
+import { ReviewDialog } from "@/components/review-dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-const ACCEPTED = ".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.webp";
-const FORMATS_HINT = "PDF, DOCX, TXT, MD, PNG, JPG, WEBP";
+const ACCEPTED =
+  ".pdf,.docx,.txt,.md,.epub,.png,.jpg,.jpeg,.webp,.mp3,.wav,.m4a,.ogg,.webm,.aac,.flac";
+const FORMATS_HINT = "PDF, DOCX, TXT, EPUB, MP3/WAV (transcrit), PNG/JPG (OCR) — 80 Mo max";
 const FOLDER_COLORS = ["#10b981", "#f59e0b", "#f43f5e", "#14b8a6", "#a855f7", "#78716c"];
+/** Image kinds that go through OCR and may need a manual correction pass. */
+const SCAN_KINDS = new Set(["png", "jpg", "jpeg", "webp"]);
+
+/** Per-kind badge metadata for the document cards. */
+const KIND_META: Record<string, { icon: LucideIcon; label: string; className?: string }> = {
+  pdf: { icon: FileText, label: "PDF" },
+  docx: { icon: FileText, label: "DOCX" },
+  txt: { icon: FileText, label: "TXT" },
+  md: { icon: FileText, label: "MD" },
+  epub: { icon: BookOpen, label: "EPUB" },
+  audio: { icon: AudioLines, label: "Audio", className: "border-amber-300 bg-amber-50 text-amber-700" },
+  png: { icon: ImageIcon, label: "PNG" },
+  jpg: { icon: ImageIcon, label: "JPG" },
+  jpeg: { icon: ImageIcon, label: "JPEG" },
+  webp: { icon: ImageIcon, label: "WEBP" },
+};
+
+function KindBadge({ kind }: { kind: string }) {
+  const meta = KIND_META[kind] ?? { icon: FileText, label: kind.toUpperCase() };
+  const Icon = meta.icon;
+  return (
+    <Badge variant="outline" className={cn("gap-1 text-[10px] font-semibold uppercase", meta.className)}>
+      <Icon className="size-3" aria-hidden="true" />
+      {meta.label}
+    </Badge>
+  );
+}
 
 function freshAgents(): AgentDisplay[] {
   return INGEST_AGENT_ORDER.map((a) => ({
@@ -123,6 +159,39 @@ export function DocumentsSection({
   const [docToDelete, setDocToDelete] = useState<DocumentDTO | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // ----- OCR review (scanned documents with status "à vérifier") -----
+  const [reviewDoc, setReviewDoc] = useState<DocumentDTO | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
+
+  const openReviewDialog = (doc: DocumentDTO) => {
+    setReviewDoc(doc);
+    setReviewOpen(true);
+  };
+
+  /** After a correction save: refresh the list, then land on Révision with the greeting. */
+  const handleReviewSaved = (updated: DocumentDetailDTO) => {
+    onDocumentsChanged();
+    onImported?.(updated);
+  };
+
+  /** Opens the generated PDF in a new tab (blob URL — popup-blocker safe). */
+  const openDocumentPdf = async (doc: DocumentDTO) => {
+    const win = window.open("", "_blank"); // open within the user gesture
+    if (!win) {
+      toast.error("Le navigateur a bloqué l'ouverture du PDF — autorise les pop-ups.");
+      return;
+    }
+    try {
+      const blob = await fetchDocumentPdf(doc.id);
+      const url = URL.createObjectURL(blob);
+      win.location.href = url;
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      win.close();
+      toast.error(err instanceof Error ? err.message : "PDF non encore généré — corrige d'abord le texte.");
+    }
+  };
+
   const loadFolders = useCallback(async () => {
     try {
       setFolders(await fetchFolders());
@@ -169,10 +238,18 @@ export function DocumentsSection({
         case "agent.error":
           patchAgent(event.id, { status: "error", summary: event.message });
           break;
-        case "ingest.done":
+        case "ingest.done": {
           setProgress(100);
+          // Scanned documents (OCR) land with status "à vérifier": keep the user
+          // here to correct the extracted text first — the redirect to Révision
+          // happens after the correction is saved (handleReviewSaved).
+          const needsReview = event.document.status === "à vérifier";
           toast.success(`« ${docTitle} » importé — ${event.document.chunks} segments indexés`);
-          setSuccess("Prêt à réviser — direction l'onglet Révision");
+          setSuccess(
+            needsReview
+              ? "Texte extrait par OCR — vérifie-le dans la fenêtre ouverte, puis enregistre."
+              : "Prêt à réviser — direction l'onglet Révision"
+          );
           window.setTimeout(() => setSuccess(null), 6000);
           setTitle("");
           setSubject("");
@@ -180,8 +257,14 @@ export function DocumentsSection({
           if (inputRef.current) inputRef.current.value = "";
           onDocumentsChanged();
           void loadFolders();
-          onImported?.(event.document);
+          if (needsReview) {
+            setReviewDoc(event.document);
+            setReviewOpen(true);
+          } else {
+            onImported?.(event.document);
+          }
           break;
+        }
         case "ingest.error":
           toast.error(event.message);
           setAgents((prev) =>
@@ -490,11 +573,11 @@ export function DocumentsSection({
         <div className="space-y-4 lg:col-span-3">
           {/* Folders bar */}
           <div className="rounded-xl border bg-muted/30 p-3">
-            <div className="mb-2 flex items-center gap-2">
-              <Folder className="size-4 text-emerald-600" aria-hidden="true" />
+            <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
+              <Folder className="size-4 shrink-0 text-emerald-600" aria-hidden="true" />
               <p className="text-sm font-semibold">Dossiers</p>
               {activeFolderObj && (
-                <span className="text-xs text-muted-foreground">
+                <span className="min-w-0 truncate text-xs text-muted-foreground">
                   — filtré sur « {activeFolderObj.name} »
                 </span>
               )}
@@ -666,7 +749,12 @@ export function DocumentsSection({
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="max-w-full truncate font-medium">{doc.title}</p>
-                          <Badge variant="secondary">{doc.subject}</Badge>
+                          <Badge
+                            variant="secondary"
+                            className="max-w-full whitespace-normal break-words"
+                          >
+                            {doc.subject}
+                          </Badge>
                           <Badge
                             variant="outline"
                             className={cn(
@@ -678,9 +766,23 @@ export function DocumentsSection({
                           >
                             {doc.language === "en" ? "EN" : "FR"}
                           </Badge>
-                          <Badge variant="outline" className="uppercase">
-                            {doc.kind}
-                          </Badge>
+                          <KindBadge kind={doc.kind} />
+                          {doc.status === "à vérifier" && (
+                            <Badge
+                              asChild
+                              variant="outline"
+                              className="cursor-pointer gap-1 border-amber-300 bg-amber-50 text-[10px] font-semibold uppercase text-amber-700 hover:bg-amber-100"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => openReviewDialog(doc)}
+                                aria-label={`Corriger le texte extrait de ${doc.title}`}
+                              >
+                                <PenLine className="size-3" aria-hidden="true" />
+                                À vérifier
+                              </button>
+                            </Badge>
+                          )}
                           {doc.folderName && (
                             <Badge variant="outline" className="gap-1 text-[10px]">
                               <span
@@ -727,6 +829,18 @@ export function DocumentsSection({
                             <DropdownMenuItem onSelect={() => onRevise(doc.id)}>
                               <Headphones aria-hidden="true" />
                               Écouter
+                            </DropdownMenuItem>
+                          )}
+                          {(doc.status === "à vérifier" || SCAN_KINDS.has(doc.kind)) && (
+                            <DropdownMenuItem onSelect={() => openReviewDialog(doc)}>
+                              <PenLine aria-hidden="true" />
+                              Corriger le texte (OCR)
+                            </DropdownMenuItem>
+                          )}
+                          {doc.kind === "pdf" && (
+                            <DropdownMenuItem onSelect={() => void openDocumentPdf(doc)}>
+                              <FileText aria-hidden="true" />
+                              Ouvrir le PDF
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuSeparator />
@@ -940,6 +1054,14 @@ export function DocumentsSection({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* OCR correction / save-as-PDF (scanned documents) */}
+      <ReviewDialog
+        doc={reviewDoc}
+        open={reviewOpen}
+        onOpenChange={setReviewOpen}
+        onSaved={handleReviewSaved}
+      />
     </div>
   );
 }

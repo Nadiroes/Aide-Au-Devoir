@@ -1,0 +1,802 @@
+     1→"use client";
+     2→
+     3→// Révision guidée — coach Q&A SSE screen with permanent audio reader.
+     4→// Left column: course selector + meta + TTS player (before / during / after Q&A).
+     5→// Right column: toolbar (filter/sort/clear/export), greeting prompt, live
+     6→// streamed exchange (question → answer → evaluation), stored Q&A fiche,
+     7→// answer input with voice dictation (ASR) and agent status strip.
+     8→
+     9→import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+    10→import {
+    11→  ChevronDown,
+    12→  Download,
+    13→  Eye,
+    14→  EyeOff,
+    15→  Headphones,
+    16→  HelpCircle,
+    17→  Loader2,
+    18→  Mic,
+    19→  Pause,
+    20→  Play,
+    21→  SendHorizonal,
+    22→  SkipForward,
+    23→  Sparkles,
+    24→  Square,
+    25→  Trash2,
+    26→  Volume2,
+    27→} from "lucide-react";
+    28→import { motion } from "framer-motion";
+    29→import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+    30→import { Button } from "@/components/ui/button";
+    31→import { Badge } from "@/components/ui/badge";
+    32→import { Progress } from "@/components/ui/progress";
+    33→import { Textarea } from "@/components/ui/textarea";
+    34→import {
+    35→  Select,
+    36→  SelectContent,
+    37→  SelectGroup,
+    38→  SelectItem,
+    39→  SelectLabel,
+    40→  SelectTrigger,
+    41→  SelectValue,
+    42→} from "@/components/ui/select";
+    43→import {
+    44→  Collapsible,
+    45→  CollapsibleContent,
+    46→  CollapsibleTrigger,
+    47→} from "@/components/ui/collapsible";
+    48→import {
+    49→  AlertDialog,
+    50→  AlertDialogAction,
+    51→  AlertDialogCancel,
+    52→  AlertDialogContent,
+    53→  AlertDialogDescription,
+    54→  AlertDialogFooter,
+    55→  AlertDialogHeader,
+    56→  AlertDialogTitle,
+    57→  AlertDialogTrigger,
+    58→} from "@/components/ui/alert-dialog";
+    59→import { AgentStatusList, type AgentDisplay } from "@/components/agent-status";
+    60→import { MarkdownView } from "@/components/markdown-view";
+    61→import { useTtsPlayer } from "@/hooks/use-tts-player";
+    62→import { useRecorder } from "@/hooks/use-recorder";
+    63→import { getTtsPrefs } from "@/components/settings-section";
+    64→import { isAbortError, postSse } from "@/lib/sse-client";
+    65→import {
+    66→  clearQAs,
+    67→  deleteQA,
+    68→  fetchDocumentDetail,
+    69→  fetchFolders,
+    70→  fetchQAs,
+    71→  patchQA,
+    72→} from "@/lib/api-client";
+    73→import {
+    74→  REVISION_AGENT_ORDER,
+    75→  TTS_VOICES,
+    76→  VERDICT_META,
+    77→} from "@/lib/types";
+    78→import type {
+    79→  DocLanguage,
+    80→  DocumentDTO,
+    81→  DocumentDetailDTO,
+    82→  FolderDTO,
+    83→  QAFilter,
+    84→  QARating,
+    85→  QASort,
+    86→  RevisionEvent,
+    87→  RevisionQADTO,
+    88→  RevisionRequestBody,
+    89→  RevisionVerdict,
+    90→} from "@/lib/types";
+    91→import { toast } from "sonner";
+    92→import { cn } from "@/lib/utils";
+    93→
+    94→// ---------- Local constants ----------
+    95→
+    96→const RATING_META: Record<QARating, { label: string; active: string }> = {
+    97→  connu: { label: "Je sais 👍", active: "bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700" },
+    98→  moyen: { label: "Moyen 🤔", active: "bg-amber-500 text-white border-amber-500 hover:bg-amber-600" },
+    99→  arevoir: { label: "À revoir 🔁", active: "bg-rose-600 text-white border-rose-600 hover:bg-rose-700" },
+   100→};
+   101→
+   102→const FILTER_CHIPS: { id: QAFilter; label: string }[] = [
+   103→  { id: "all", label: "Tous" },
+   104→  { id: "visible", label: "Affichées" },
+   105→  { id: "hidden", label: "Effacées" },
+   106→  { id: "arevoir", label: "À revoir" },
+   107→  { id: "moyen", label: "Moyen" },
+   108→  { id: "connu", label: "Je sais" },
+   109→];
+   110→
+   111→const SPEED_OPTIONS = ["0.75", "1", "1.25", "1.5"];
+   112→
+   113→/** Minimal markdown strip so the TTS doesn't read asterisks and hashes. */
+   114→function stripMd(md: string): string {
+   115→  return md
+   116→    .replace(/[#*`>_~[\]()>-]/g, " ")
+   117→    .replace(/\s+/g, " ")
+   118→    .trim();
+   119→}
+   120→
+   121→function freshAgents(): AgentDisplay[] {
+   122→  return REVISION_AGENT_ORDER.map((a) => ({
+   123→    id: a.id,
+   124→    label: a.label,
+   125→    status: "idle" as const,
+   126→    logs: [],
+   127→  }));
+   128→}
+   129→
+   130→interface LiveEvaluation {
+   131→  verdict: RevisionVerdict;
+   132→  feedback: string;
+   133→  modelAnswer: string;
+   134→  score: number;
+   135→}
+   136→
+   137→interface LiveExchange {
+   138→  mode: "question" | "ask";
+   139→  /** Streamed coach text (the question, or the reply to a free question). */
+   140→  coach: string;
+   141→  /** User's answer (mode=question) or asked question (mode=ask). Null while awaiting answer. */
+   142→  userText: string | null;
+   143→  /** Streamed evaluator feedback. */
+   144→  feedback: string;
+   145→  evaluation: LiveEvaluation | null;
+   146→  qaId: string | null;
+   147→}
+   148→
+   149→function timeLabel(iso: string): string {
+   150→  return new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+   151→}
+   152→
+   153→// ---------- Small pieces ----------
+   154→
+   155→function EqBars() {
+   156→  return (
+   157→    <span className="eq-bars" aria-hidden="true">
+   158→      <span className="eq-bar" />
+   159→      <span className="eq-bar" style={{ animationDelay: "0.15s" }} />
+   160→      <span className="eq-bar" style={{ animationDelay: "0.3s" }} />
+   161→    </span>
+   162→  );
+   163→}
+   164→
+   165→function RatingButtons({
+   166→  value,
+   167→  onRate,
+   168→  size = "sm",
+   169→}: {
+   170→  value: QARating | null;
+   171→  onRate: (rating: QARating) => void;
+   172→  size?: "sm" | "xs";
+   173→}) {
+   174→  return (
+   175→    <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Auto-évaluation">
+   176→      {(Object.keys(RATING_META) as QARating[]).map((rating) => {
+   177→        const meta = RATING_META[rating];
+   178→        const active = value === rating;
+   179→        return (
+   180→          <Button
+   181→            key={rating}
+   182→            type="button"
+   183→            variant="outline"
+   184→            size="sm"
+   185→            onClick={() => onRate(rating)}
+   186→            aria-pressed={active}
+   187→            aria-label={`Auto-évaluation : ${meta.label}`}
+   188→            className={cn(
+   189→              "h-8 rounded-full px-3 text-xs",
+   190→              size === "xs" && "h-7 px-2.5 text-[11px]",
+   191→              active ? meta.active : "bg-transparent"
+   192→            )}
+   193→          >
+   194→            {meta.label}
+   195→          </Button>
+   196→        );
+   197→      })}
+   198→    </div>
+   199→  );
+   200→}
+   201→
+   202→function QaCard({
+   203→  qa,
+   204→  deleting,
+   205→  onRate,
+   206→  onToggleHidden,
+   207→  onDelete,
+   208→  language,
+   209→}: {
+   210→  qa: RevisionQADTO;
+   211→  deleting: boolean;
+   212→  onRate: (rating: QARating) => void;
+   213→  onToggleHidden: () => void;
+   214→  onDelete: () => void;
+   215→  language: DocLanguage;
+   216→}) {
+   217→  const [expanded, setExpanded] = useState(false);
+   218→
+   219→  if (qa.hidden) {
+   220→    return (
+   221→      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed bg-muted/30 px-3 py-2.5">
+   222→        <p className="text-xs text-muted-foreground">
+   223→          Réponse effacée de l&apos;écran — conservée dans la fiche 👁️
+   224→        </p>
+   225→        <Button
+   226→          variant="outline"
+   227→          size="sm"
+   228→          className="h-8 gap-1.5 text-xs"
+   229→          onClick={onToggleHidden}
+   230→          aria-label="Afficher à nouveau cette réponse"
+   231→        >
+   232→          <Eye className="size-3.5" aria-hidden="true" />
+   233→          Afficher
+   234→        </Button>
+   235→      </div>
+   236→    );
+   237→  }
+   238→
+   239→  const verdict = VERDICT_META[qa.verdict];
+   240→
+   241→  return (
+   242→    <motion.div
+   243→      initial={{ opacity: 0, y: 8 }}
+   244→      animate={{ opacity: 1, y: 0 }}
+   245→      transition={{ duration: 0.2 }}
+   246→      className="rounded-xl border p-3"
+   247→    >
+   248→      <div className="flex items-start justify-between gap-2">
+   249→        <p className="min-w-0 text-sm font-semibold">{qa.question}</p>
+   250→        <div className="flex shrink-0 items-center gap-1">
+   251→          <Button
+   252→            variant="ghost"
+   253→            size="icon"
+   254→            className="size-8 text-muted-foreground hover:text-foreground"
+   255→            onClick={onToggleHidden}
+   256→            aria-label="Effacer cette réponse de l'écran"
+   257→          >
+   258→            <EyeOff className="size-4" aria-hidden="true" />
+   259→          </Button>
+   260→          <AlertDialog>
+   261→            <AlertDialogTrigger asChild>
+   262→              <Button
+   263→                variant="ghost"
+   264→                size="icon"
+   265→                className="size-8 text-red-500 hover:bg-red-50 hover:text-red-600"
+   266→                disabled={deleting}
+   267→                aria-label="Supprimer définitivement cette question"
+   268→              >
+   269→                {deleting ? (
+   270→                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+   271→                ) : (
+   272→                  <Trash2 className="size-4" aria-hidden="true" />
+   273→                )}
+   274→              </Button>
+   275→            </AlertDialogTrigger>
+   276→            <AlertDialogContent>
+   277→              <AlertDialogHeader>
+   278→                <AlertDialogTitle>Supprimer cette question ?</AlertDialogTitle>
+   279→                <AlertDialogDescription>
+   280→                  Elle sera définitivement retirée de la fiche de révision.
+   281→                </AlertDialogDescription>
+   282→              </AlertDialogHeader>
+   283→              <AlertDialogFooter>
+   284→                <AlertDialogCancel>Annuler</AlertDialogCancel>
+   285→                <AlertDialogAction
+   286→                  className="bg-red-600 text-white hover:bg-red-700"
+   287→                  onClick={onDelete}
+   288→                >
+   289→                  Supprimer
+   290→                </AlertDialogAction>
+   291→              </AlertDialogFooter>
+   292→            </AlertDialogContent>
+   293→          </AlertDialog>
+   294→        </div>
+   295→      </div>
+   296→
+   297→      {qa.answer ? (
+   298→        <p className="mt-1.5 whitespace-pre-wrap text-sm text-foreground/90">{qa.answer}</p>
+   299→      ) : null}
+   300→
+   301→      <div className="mt-2 flex flex-wrap items-center gap-2">
+   302→        <Badge variant="outline" className={cn("text-[10px]", verdict.className)}>
+   303→          {verdict.icon} {verdict.label}
+   304→        </Badge>
+   305→        <span className="text-[11px] text-muted-foreground">{timeLabel(qa.createdAt)}</span>
+   306→      </div>
+   307→
+   308→      {qa.feedback ? (
+   309→        <div className="mt-2">
+   310→          <div className={cn("text-xs text-muted-foreground", !expanded && "line-clamp-3")}>
+   311→            <MarkdownView content={qa.feedback} />
+   312→          </div>
+   313→          <button
+   314→            type="button"
+   315→            onClick={() => setExpanded((e) => !e)}
+   316→            className="mt-1 inline-flex min-h-8 items-center gap-1 text-[11px] font-medium text-emerald-700 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+   317→            aria-expanded={expanded}
+   318→          >
+   319→            {expanded ? "Réduire" : "Lire tout le feedback"}
+   320→            <ChevronDown className={cn("size-3 transition-transform", expanded && "rotate-180")} aria-hidden="true" />
+   321→          </button>
+   322→        </div>
+   323→      ) : null}
+   324→
+   325→      {qa.modelAnswer ? (
+   326→        <Collapsible>
+   327→          <CollapsibleTrigger className="mt-1 inline-flex min-h-8 items-center gap-1 text-[11px] font-medium text-emerald-700 outline-none focus-visible:ring-2 focus-visible:ring-ring">
+   328→            Réponse attendue
+   329→            <ChevronDown className="size-3" aria-hidden="true" />
+   330→          </CollapsibleTrigger>
+   331→          <CollapsibleContent>
+   332→            <div className="mt-1 rounded-lg border bg-muted/40 p-2">
+   333→              <div className="text-xs text-muted-foreground">
+   334→                <MarkdownView content={qa.modelAnswer} />
+   335→              </div>
+   336→            </div>
+   337→          </CollapsibleContent>
+   338→        </Collapsible>
+   339→      ) : null}
+   340→
+   341→      <div className="mt-3 border-t pt-2.5">
+   342→        <RatingButtons value={qa.rating ?? null} onRate={onRate} size="xs" />
+   343→      </div>
+   344→      <span className="sr-only">Langue du cours : {language === "fr" ? "français" : "anglais"}</span>
+   345→    </motion.div>
+   346→  );
+   347→}
+   348→
+   349→// ---------- Main section ----------
+   350→
+   351→export interface RevisionSectionProps {
+   352→  documents: DocumentDTO[];
+   353→  onDocumentsChanged: () => void;
+   354→  selectedDocumentId: string | null;
+   355→  onSelectDocument: (id: string) => void;
+   356→  greetDocumentId?: string | null;
+   357→  onGreetConsumed?: () => void;
+   358→  onOpenCourses?: () => void;
+   359→  onMemoryChanged?: () => void;
+   360→}
+   361→
+   362→export function RevisionSection({
+   363→  documents,
+   364→  onDocumentsChanged,
+   365→  selectedDocumentId,
+   366→  onSelectDocument,
+   367→  greetDocumentId,
+   368→  onGreetConsumed,
+   369→  onOpenCourses,
+   370→  onMemoryChanged,
+   371→}: RevisionSectionProps) {
+   372→  const docId = selectedDocumentId;
+   373→  const currentDoc = useMemo(
+   374→    () => documents.find((d) => d.id === docId) ?? null,
+   375→    [documents, docId]
+   376→  );
+   377→
+   378→  const [folders, setFolders] = useState<FolderDTO[]>([]);
+   379→  const [detail, setDetail] = useState<DocumentDetailDTO | null>(null);
+   380→  const [detailLoading, setDetailLoading] = useState(false);
+   381→  const [qas, setQas] = useState<RevisionQADTO[]>([]);
+   382→  const [qasLoading, setQasLoading] = useState(false);
+   383→  const [filter, setFilter] = useState<QAFilter>("all");
+   384→  const [sort, setSort] = useState<QASort>("recent");
+   385→  const [deletingQaId, setDeletingQaId] = useState<string | null>(null);
+   386→
+   387→  const [busy, setBusy] = useState(false);
+   388→  const [agents, setAgents] = useState<AgentDisplay[]>(freshAgents);
+   389→  const [live, setLive] = useState<LiveExchange | null>(null);
+   390→  const [liveRating, setLiveRating] = useState<QARating | null>(null);
+   391→  const [answerInput, setAnswerInput] = useState("");
+   392→  const [dismissedPrompt, setDismissedPrompt] = useState(false);
+   393→
+   394→  // Audio reader preferences (persisted in Paramètres).
+   395→  const [voice, setVoice] = useState<string>("auto");
+   396→  const [speed, setSpeed] = useState<number>(1);
+   397→
+   398→  const player = useTtsPlayer();
+   399→  const abortRef = useRef<AbortController | null>(null);
+   400→  const streamRef = useRef<HTMLDivElement | null>(null);
+   401→  const detailRef = useRef<DocumentDetailDTO | null>(null);
+   402→  const liveRef = useRef<LiveExchange | null>(null);
+   403→
+   404→  const recorder = useRecorder((text) =>
+   405→    setAnswerInput((prev) => (prev.trim().length > 0 ? `${prev.trim()} ${text}` : text))
+   406→  );
+   407→
+   408→  useEffect(() => {
+   409→    detailRef.current = detail;
+   410→  }, [detail]);
+   411→
+   412→  // Mirror of the live exchange for use inside the SSE handler.
+   413→  useEffect(() => {
+   414→    liveRef.current = live;
+   415→  }, [live]);
+   416→
+   417→  // Toast dictation errors.
+   418→  useEffect(() => {
+   419→    if (recorder.error) toast.error(recorder.error);
+   420→  }, [recorder.error]);
+   421→
+   422→  // Load persisted TTS preferences once.
+   423→  useEffect(() => {
+   424→    const prefs = getTtsPrefs();
+   425→    setVoice(prefs.voice ?? "auto");
+   426→    setSpeed(prefs.speed ?? 1);
+   427→  }, []);
+   428→
+   429→  // Non-critical: folder list for the grouped selector.
+   430→  useEffect(() => {
+   431→    void (async () => {
+   432→      try {
+   433→        setFolders(await fetchFolders());
+   434→      } catch {
+   435→        // Folders are optional — ignore silently.
+   436→      }
+   437→    })();
+   438→  }, []);
+   439→
+   440→  // ---------- Data loading ----------
+   441→
+   442→  const loadDetail = useCallback(async (id: string) => {
+   443→    setDetailLoading(true);
+   444→    try {
+   445→      setDetail(await fetchDocumentDetail(id));
+   446→    } catch (err) {
+   447→      toast.error(err instanceof Error ? err.message : "Impossible de charger le cours");
+   448→    } finally {
+   449→      setDetailLoading(false);
+   450→    }
+   451→  }, []);
+   452→
+   453→  const loadQas = useCallback(
+   454→    async (id: string) => {
+   455→      setQasLoading(true);
+   456→      try {
+   457→        setQas(await fetchQAs(id, { filter, sort }));
+   458→      } catch (err) {
+   459→        toast.error(err instanceof Error ? err.message : "Impossible de charger la fiche de révision");
+   460→      } finally {
+   461→        setQasLoading(false);
+   462→      }
+   463→    },
+   464→    [filter, sort]
+   465→  );
+   466→
+   467→  // Document switch — hard reset of the workspace (stops audio too).
+   468→  useEffect(() => {
+   469→    player.stop();
+   470→    setLive(null);
+   471→    setLiveRating(null);
+   472→    setDismissedPrompt(false);
+   473→    setAgents(freshAgents());
+   474→    setBusy(false);
+   475→    abortRef.current?.abort();
+   476→    abortRef.current = null;
+   477→    setDetail(null);
+   478→    setQas([]);
+   479→    setAnswerInput("");
+   480→    if (docId) {
+   481→      void loadDetail(docId);
+   482→      void loadQas(docId);
+   483→    }
+   484→  }, [docId]);
+   485→
+   486→  // Refetch when the filter / sort changes (same document).
+   487→  useEffect(() => {
+   488→    if (docId) void loadQas(docId);
+   489→  }, [filter, sort]);
+   490→
+   491→  // Auto-scroll the Q&A stream while busy.
+   492→  useEffect(() => {
+   493→    if (busy && streamRef.current) {
+   494→      streamRef.current.scrollTop = streamRef.current.scrollHeight;
+   495→    }
+   496→  }, [live?.coach, live?.feedback, busy]);
+   497→
+   498→  // ---------- SSE state machine ----------
+   499→
+   500→  const patchAgent = useCallback((id: string, patch: Partial<AgentDisplay>) => {
+   501→    setAgents((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+   502→  }, []);
+   503→
+   504→  const handleEvent = useCallback(
+   505→    (event: RevisionEvent) => {
+   506→      switch (event.type) {
+   507→        case "revision.start":
+   508→          break;
+   509→        case "agent.start":
+   510→          patchAgent(event.id, { status: "running", logs: [], summary: undefined, content: undefined });
+   511→          break;
+   512→        case "agent.log":
+   513→          setAgents((prev) =>
+   514→            prev.map((a) => (a.id === event.id ? { ...a, logs: [...a.logs, event.message] } : a))
+   515→          );
+   516→          break;
+   517→        case "agent.done": {
+   518→          patchAgent(event.id, { status: "done", summary: event.summary, content: event.content });
+   519→          // Optional auto-read: when the coach finishes an open question, speak it aloud.
+   520→          if (event.id === "coach" && getTtsPrefs().autoread && detailRef.current) {
+   521→            const current = liveRef.current;
+   522→            if (current && current.mode === "question" && current.userText === null && current.coach.trim().length > 0) {
+   523→              player.play(stripMd(current.coach), { language: detailRef.current.language });
+   524→            }
+   525→          }
+   526→          break;
+   527→        }
+   528→        case "agent.error":
+   529→          patchAgent(event.id, { status: "error", summary: event.message });
+   530→          toast.error(event.message);
+   531→          break;
+   532→        case "message.token":
+   533→          setLive((prev) => {
+   534→            const base: LiveExchange =
+   535→              prev ?? { mode: "question", coach: "", userText: null, feedback: "", evaluation: null, qaId: null };
+   536→            // Once the user's answer is in, tokens are evaluator feedback.
+   537→            if (base.mode === "question" && base.userText !== null) {
+   538→              return { ...base, feedback: base.feedback + event.token };
+   539→            }
+   540→            return { ...base, coach: base.coach + event.token };
+   541→          });
+   542→          break;
+   543→        case "evaluation":
+   544→          setLive((prev) => {
+   545→            if (!prev) return prev;
+   546→            return {
+   547→              ...prev,
+   548→              evaluation: {
+   549→                verdict: event.verdict,
+   550→                feedback: event.feedback,
+   551→                modelAnswer: event.modelAnswer,
+   552→                score: event.score,
+   553→              },
+   554→              feedback: prev.feedback.trim().length > 0 ? prev.feedback : event.feedback,
+   555→            };
+   556→          });
+   557→          break;
+   558→        case "qa.saved": {
+   559→          const qa = event.qa;
+   560→          const isQuestionOnly = !qa.answer || qa.answer.trim().length === 0;
+   561→          if (isQuestionOnly) {
+   562→            setLive((prev) => {
+   563→              const base: LiveExchange =
+   564→                prev ?? { mode: "question", coach: "", userText: null, feedback: "", evaluation: null, qaId: null };
+   565→              return {
+   566→                ...base,
+   567→                qaId: qa.id,
+   568→                coach: base.coach.trim().length > 0 ? base.coach : qa.question,
+   569→              };
+   570→            });
+   571→            // Auto-read preference: the coach question is spoken aloud.
+   572→            if (getTtsPrefs().autoread && detailRef.current) {
+   573→              player.play(stripMd(qa.question), { language: detailRef.current.language });
+   574→            }
+   575→          } else {
+   576→            setLive((prev) => (prev ? { ...prev, qaId: prev.qaId ?? qa.id } : prev));
+   577→            setQas((prev) => {
+   578→              const idx = prev.findIndex((q) => q.id === qa.id);
+   579→              if (idx === -1) return [qa, ...prev];
+   580→              const copy = [...prev];
+   581→              copy[idx] = qa;
+   582→              return copy;
+   583→            });
+   584→          }
+   585→          onDocumentsChanged();
+   586→          break;
+   587→        }
+   588→        case "memory.saved":
+   589→          onMemoryChanged?.();
+   590→          break;
+   591→        case "revision.done": {
+   592→          setBusy(false);
+   593→          setAgents((prev) =>
+   594→            prev.map((a) => (a.status === "running" ? { ...a, status: "done" as const } : a))
+   595→          );
+   596→          // Completed exchange (answered or free question) → collapses into the fiche.
+   597→          setLive((prev) => (prev && (prev.mode === "ask" || prev.userText !== null) ? null : prev));
+   598→          if (docId) {
+   599→            void loadQas(docId);
+   600→            void loadDetail(docId);
+   601→          }
+   602→          break;
+   603→        }
+   604→        case "revision.error":
+   605→          toast.error(event.message);
+   606→          setBusy(false);
+   607→          setAgents((prev) =>
+   608→            prev.map((a) => (a.status === "running" ? { ...a, status: "error" as const } : a))
+   609→          );
+   610→          break;
+   611→      }
+   612→    },
+   613→    [patchAgent, onDocumentsChanged, onMemoryChanged, docId, loadQas, loadDetail]
+   614→  );
+   615→
+   616→  const runRevision = useCallback(
+   617→    async (body: RevisionRequestBody) => {
+   618→      if (!docId || busy) return;
+   619→      setBusy(true);
+   620→      setAgents(freshAgents());
+   621→      const controller = new AbortController();
+   622→      abortRef.current = controller;
+   623→      try {
+   624→        await postSse<RevisionEvent>("/api/revision", body, handleEvent, controller.signal);
+   625→      } catch (err) {
+   626→        if (isAbortError(err)) {
+   627→          toast.info("Flux interrompu");
+   628→          setAgents((prev) =>
+   629→            prev.map((a) => (a.status === "running" ? { ...a, status: "idle" as const } : a))
+   630→          );
+   631→        } else {
+   632→          toast.error(err instanceof Error ? err.message : "Erreur pendant la révision");
+   633→          setAgents((prev) =>
+   634→            prev.map((a) => (a.status === "running" ? { ...a, status: "error" as const } : a))
+   635→          );
+   636→        }
+   637→      } finally {
+   638→        abortRef.current = null;
+   639→        setBusy(false);
+   640→      }
+   641→    },
+   642→    [docId, busy, handleEvent]
+   643→  );
+   644→
+   645→  // ---------- Actions ----------
+   646→
+   647→  const nextQuestion = useCallback(() => {
+   648→    if (!docId || busy) return;
+   649→    setLive(null);
+   650→    setLiveRating(null);
+   651→    void runRevision({
+   652→      action: "question",
+   653→      documentId: docId,
+   654→      avoidIds: qas.slice(0, 10).map((q) => q.id),
+   655→    });
+   656→  }, [docId, busy, qas, runRevision]);
+   657→
+   658→  const startFromGreet = () => {
+   659→    setDismissedPrompt(true);
+   660→    onGreetConsumed?.();
+   661→    nextQuestion();
+   662→  };
+   663→
+   664→  const submitAnswer = () => {
+   665→    const text = answerInput.trim();
+   666→    if (!docId || busy || !live || live.mode !== "question" || live.userText !== null) return;
+   667→    if (text.length === 0 || live.coach.trim().length === 0) return;
+   668→    setLive({ ...live, userText: text, feedback: "", evaluation: null });
+   669→    setLiveRating(null);
+   670→    setAnswerInput("");
+   671→    void runRevision({
+   672→      action: "answer",
+   673→      documentId: docId,
+   674→      qaId: live.qaId ?? undefined,
+   675→      question: live.coach,
+   676→      userAnswer: text,
+   677→    });
+   678→  };
+   679→
+   680→  const askCoach = () => {
+   681→    const q = answerInput.trim();
+   682→    if (!docId || busy || q.length === 0) return;
+   683→    setLive({ mode: "ask", coach: "", userText: q, feedback: "", evaluation: null, qaId: null });
+   684→    setLiveRating(null);
+   685→    setAnswerInput("");
+   686→    void runRevision({ action: "ask", documentId: docId, question: q });
+   687→  };
+   688→
+   689→  const stopStream = () => {
+   690→    abortRef.current?.abort();
+   691→  };
+   692→
+   693→  const rateStoredQa = async (id: string, rating: QARating) => {
+   694→    try {
+   695→      const updated = await patchQA(id, { rating });
+   696→      setQas((prev) => prev.map((q) => (q.id === id ? updated : q)));
+   697→      toast.success("Auto-évaluation enregistrée — l'assistant s'en souviendra");
+   698→      onDocumentsChanged();
+   699→    } catch (err) {
+   700→      toast.error(err instanceof Error ? err.message : "Évaluation impossible");
+   701→    }
+   702→  };
+   703→
+   704→  const rateLiveQa = async (rating: QARating) => {
+   705→    if (!live?.qaId) return;
+   706→    setLiveRating(rating);
+   707→    try {
+   708→      await patchQA(live.qaId, { rating });
+   709→      toast.success("Auto-évaluation enregistrée — l'assistant s'en souviendra");
+   710→      onDocumentsChanged();
+   711→    } catch (err) {
+   712→      toast.error(err instanceof Error ? err.message : "Évaluation impossible");
+   713→      setLiveRating(null);
+   714→    }
+   715→  };
+   716→
+   717→  const toggleHidden = async (qa: RevisionQADTO) => {
+   718→    try {
+   719→      const updated = await patchQA(qa.id, { hidden: !qa.hidden });
+   720→      setQas((prev) => prev.map((q) => (q.id === qa.id ? updated : q)));
+   721→      if (docId) void loadDetail(docId);
+   722→      onDocumentsChanged();
+   723→    } catch (err) {
+   724→      toast.error(err instanceof Error ? err.message : "Action impossible");
+   725→    }
+   726→  };
+   727→
+   728→  const removeQa = async (id: string) => {
+   729→    setDeletingQaId(id);
+   730→    try {
+   731→      await deleteQA(id);
+   732→      setQas((prev) => prev.filter((q) => q.id !== id));
+   733→      toast.success("Question supprimée de la fiche");
+   734→      if (docId) void loadDetail(docId);
+   735→      onDocumentsChanged();
+   736→    } catch (err) {
+   737→      toast.error(err instanceof Error ? err.message : "Suppression impossible");
+   738→    } finally {
+   739→      setDeletingQaId(null);
+   740→    }
+   741→  };
+   742→
+   743→  const handleClearShown = async () => {
+   744→    if (!docId) return;
+   745→    try {
+   746→      await clearQAs({ documentId: docId, mode: "shown" });
+   747→      toast.success("Réponses effacées de l'écran (conservées dans la fiche)");
+   748→      await loadQas(docId);
+   749→      void loadDetail(docId);
+   750→      onDocumentsChanged();
+   751→    } catch (err) {
+   752→      toast.error(err instanceof Error ? err.message : "Action impossible");
+   753→    }
+   754→  };
+   755→
+   756→  const handleShowAll = async () => {
+   757→    if (!docId) return;
+   758→    try {
+   759→      // The backend has no bulk "unhide": re-show hidden entries one by one.
+   760→      const hidden = await fetchQAs(docId, { filter: "hidden" });
+   761→      await Promise.all(hidden.map((qa) => patchQA(qa.id, { hidden: false })));
+   762→      toast.success("Toutes les réponses sont affichées à nouveau");
+   763→      await loadQas(docId);
+   764→      void loadDetail(docId);
+   765→      onDocumentsChanged();
+   766→    } catch (err) {
+   767→      toast.error(err instanceof Error ? err.message : "Action impossible");
+   768→    }
+   769→  };
+   770→
+   771→  const exportMarkdown = () => {
+   772→    if (!detail) return;
+   773→    const visible = qas.filter((q) => !q.hidden);
+   774→    if (visible.length === 0) {
+   775→      toast.info("Aucune réponse visible à exporter");
+   776→      return;
+   777→    }
+   778→    const lines: string[] = [
+   779→      `# Fiche de révision — ${detail.title}`,
+   780→      "",
+   781→      `_Matière : ${detail.subject} · ${visible.length} question(s) · exportée le ${new Date().toLocaleDateString("fr-FR")}_`,
+   782→      "",
+   783→    ];
+   784→    visible.forEach((qa, i) => {
+   785→      const verdict = VERDICT_META[qa.verdict];
+   786→      lines.push(`## ${i + 1}. ${qa.question}`, "");
+   787→      lines.push(`**Ma réponse :** ${qa.answer && qa.answer.trim().length > 0 ? qa.answer : "—"}`, "");
+   788→      lines.push(`**Verdict :** ${verdict.icon} ${verdict.label}`);
+   789→      if (qa.rating) lines.push(`**Auto-évaluation :** ${RATING_META[qa.rating].label}`);
+   790→      if (qa.feedback) lines.push("", `**Feedback du coach :** ${qa.feedback}`);
+   791→      if (qa.modelAnswer) lines.push("", `**Réponse attendue :** ${qa.modelAnswer}`);
+   792→      lines.push("", "---", "");
+   793→    });
+   794→    const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+   795→    const url = URL.createObjectURL(blob);
+   796→    const a = window.document.createElement("a");
+   797→    a.href = url;
+   798→    a.download = `${detail.title.replace(/[^\p{L}\p{N}]+/gu, "-").toLowerCase()}-fiche-revision.md`;
+   799→    window.document.body.appendChild(a);
+   800→    a.click();
+
+[showing lines 1-800 of 1495; use offset=801 with limit to continue reading]

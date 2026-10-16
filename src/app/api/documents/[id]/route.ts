@@ -52,10 +52,26 @@ async function toDetailDTO(id: string): Promise<DocumentDetailDTO | null> {
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
-  const dto = await toDetailDTO(id);
+  let dto = await toDetailDTO(id);
   if (!dto) {
     return NextResponse.json({ message: "Cours introuvable." }, { status: 404 });
   }
+
+  // Auto-heal: legacy documents ingested before the textContent column have an
+  // empty full-text. When the user opens the course, rebuild it from its indexed
+  // segments (in reading order) so the audio reader and edition tools work.
+  if (dto.textContent.trim().length === 0 && dto.chunks > 0) {
+    const segs = await db.chunk.findMany({ where: { documentId: id }, orderBy: { idx: "asc" } });
+    const rebuilt = segs.map((s) => s.content).join("\n\n");
+    if (rebuilt.trim().length > 0) {
+      await db.document.update({
+        where: { id },
+        data: { textContent: rebuilt, chars: rebuilt.length },
+      });
+      dto = { ...dto, textContent: rebuilt, chars: rebuilt.length };
+    }
+  }
+
   return NextResponse.json(dto);
 }
 
