@@ -1,5 +1,7 @@
 // Prisma schema — Aide au Devoir
-// Documents (cours) with extracted text chunks for RAG, encrypted API keys, chat history.
+// Documents (cours) organized in thematic folders, chunks for RAG, revision Q&A
+// ledger (with "hidden from screen but remembered" answers), agent self-learning
+// memory, encrypted API keys and chat history.
 
 generator client {
   provider = "prisma-client-js"
@@ -10,18 +12,34 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Document {
+model Folder {
   id        String   @id @default(cuid())
-  title     String
-  subject   String   @default("Général")
-  kind      String // pdf | docx | txt | md | png | jpg | jpeg | webp
-  fileName  String
-  status    String   @default("prêt") // prêt | erreur
-  chunks    Int      @default(0)
-  chars     Int      @default(0)
-  note      String? // extraction note (e.g. scanned pdf warning)
+  name      String
+  color     String   @default("#059669") // emerald-600 default
   createdAt DateTime @default(now())
-  chunkList Chunk[]
+  documents Document[]
+}
+
+model Document {
+  id          String   @id @default(cuid())
+  title       String
+  subject     String   @default("Général")
+  kind        String   // pdf | docx | txt | md | png | jpg | jpeg | webp
+  fileName    String
+  status      String   @default("prêt") // prêt | erreur
+  chunks      Int      @default(0)
+  chars       Int      @default(0)
+  note        String?  // extraction note (e.g. scanned pdf warning)
+  language    String   @default("fr") // fr | en — auto-detected, user-editable
+  textContent String   @default("") // full extracted text (source of truth for TTS + edition)
+  folderId    String?
+  folder      Folder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  chunkList   Chunk[]
+  revisionQAs RevisionQA[]
+  memories    AgentMemory[]
+
+  @@index([folderId])
 }
 
 model Chunk {
@@ -30,6 +48,37 @@ model Chunk {
   document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
   idx        Int
   content    String
+
+  @@index([documentId])
+}
+
+model RevisionQA {
+  id          String   @id @default(cuid())
+  documentId  String
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  question    String
+  answer      String // user's answer (what was said in front of them)
+  feedback    String? // coach's evaluation comment
+  verdict     String   @default("info") // correct | partly | wrong | info
+  modelAnswer String? // ideal answer the coach gives
+  rating      String? // null | connu | moyen | arevoir (self-assessment)
+  hidden      Boolean  @default(false) // "effacée de l'écran" — kept in the course memory
+  source      String   @default("coach") // coach (asked by coach) | user (asked by user) | greet
+  createdAt   DateTime @default(now())
+
+  @@index([documentId])
+}
+
+model AgentMemory {
+  id         String    @id @default(cuid())
+  kind       String // weakness | strength | preference | style | context
+  content    String
+  weight     Float     @default(1)
+  hits       Int       @default(0)
+  documentId String?
+  document   Document? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   @@index([documentId])
 }
