@@ -83,6 +83,51 @@ model AgentMemory {
   @@index([documentId])
 }
 
+model Exam {
+  id          String   @id @default(cuid())
+  title       String
+  subject     String   @default("Général")
+  kind        String   @default("mixte") // qcm | qa | mixte — detected by the agents
+  fileName    String?  // original uploaded file (null when pasted)
+  rawText     String   // full exam text as imported
+  linkStatus  String   @default("pending") // pending | linked | sans (association with courses)
+  documentIds String   @default("[]") // JSON array of linked course ids
+  theology    Boolean  @default(false) // agents detected a theology/biblical context
+  createdAt   DateTime @default(now())
+  questions   ExamQuestion[]
+  messages    ExamMessage[]
+
+  @@index([createdAt])
+}
+
+model ExamQuestion {
+  id        String  @id @default(cuid())
+  examId    String
+  exam      Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
+  idx       Int
+  type      String  @default("qa") // qcm | qa
+  prompt    String
+  options   String? // JSON string[] — QCM options (A, B, C, D…)
+  answer    String? // agent's answer (option letter + text for QCM)
+  refs      String  @default("[]") // JSON string[] — biblical / course references
+  rationale String? // justification & course excerpts used
+  createdAt DateTime @default(now())
+
+  @@index([examId])
+}
+
+model ExamMessage {
+  id        String   @id @default(cuid())
+  examId    String
+  exam      Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  role      String   // user | agent
+  content   String
+  refs      String   @default("[]") // JSON string[] — references cited in the answer
+  createdAt DateTime @default(now())
+
+  @@index([examId])
+}
+
 model ApiKey {
   id         String    @id @default(cuid())
   provider   String    @unique // mistral | agnes

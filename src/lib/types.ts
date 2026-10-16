@@ -16,7 +16,9 @@ export type AgentId =
   | "indexer"
   | "coach" // asks revision questions (adapted from memory)
   | "evaluator" // evaluates user's answer vs course content
-  | "learner"; // self-learning agent (extracts insights into AgentMemory)
+  | "learner" // self-learning agent (extracts insights into AgentMemory)
+  | "examiner" // reads/structures an imported exam
+  | "verifier"; // double-checks exam answers & references
 
 export type AgentStatus = "idle" | "running" | "done" | "error";
 
@@ -198,15 +200,37 @@ export interface TtsVoiceDTO {
   bestFor: DocLanguage | "both";
 }
 
+/**
+ * Server voices measured against French intelligibility (ASR round-trip test).
+ * They are anglophone-oriented: for a native French accent prefer the
+ * "system" engine (browser/OS French voice) — see TtsEngine.
+ */
 export const TTS_VOICES: TtsVoiceDTO[] = [
-  { id: "tongtong", label: "Tongtong", description: "Chaleureuse et claire", bestFor: "fr" },
-  { id: "kazi", label: "Kazi", description: "Voix claire et posée", bestFor: "both" },
-  { id: "douji", label: "Douji", description: "Naturelle et fluide", bestFor: "both" },
-  { id: "jam", label: "Jam", description: "Accent britannique élégant", bestFor: "en" },
+  { id: "chuichui", label: "Chuichui", description: "La plus claire en français (voix serveur)", bestFor: "fr" },
+  { id: "tongtong", label: "Tongtong", description: "Chaleureuse — français approximatif", bestFor: "fr" },
+  { id: "jam", label: "Jam", description: "Accent britannique — idéale pour l'anglais", bestFor: "en" },
+  { id: "kazi", label: "Kazi", description: "Claire et posée (accent anglophone)", bestFor: "both" },
   { id: "xiaochen", label: "Xiaochen", description: "Calme et professionnelle", bestFor: "both" },
-  { id: "chuichui", label: "Chuichui", description: "Vive et enjouée", bestFor: "both" },
-  { id: "luodo", label: "Luodo", description: "Expressive et engagée", bestFor: "both" },
+  { id: "douji", label: "Douji", description: "Fluide en anglais, faible en français", bestFor: "en" },
+  { id: "luodo", label: "Luodo", description: "Expressive — mieux en anglais", bestFor: "en" },
 ];
+
+/**
+ * Audio engine for the reader:
+ * - "system"  : the browser/OS built-in speech voices (native French accent,
+ *               e.g. Amélie/Hortense/Google français) — RECOMMENDED for French.
+ * - "serveur" : the Z.ai server voices (TTS_VOICES) — accent is anglophone.
+ * - "auto"    : system when a French voice exists on the device, else server.
+ */
+export type TtsEngine = "auto" | "system" | "serveur";
+
+/** Sample sentence used by the voice testers (settings + reader). */
+export const TTS_SAMPLE_TEXT =
+  "Au commencement, Dieu créa les cieux et la terre. C'est un test de prononciation française.";
+
+/** Highlights biblical references (Jean 3:16, 1 Corinthiens 13, Psaume 23:1-6…) in text. */
+export const BIBLE_REF_PATTERN =
+  /\b((?:[1-3]\s?)?(?:Genèse|Exode|Lévitique|Nombres|Deutéronome|Josué|Juges|Ruth|Samuel|Rois|Chroniques|Esdras|Néhémie|Nehemie|Esther|Job|Psaumes?|Proverbes|Ecclésiaste|Ecclesiaste|Cantique|Ésaïe|Esaie|Jérémie|Jeremie|Lamentations|Ézéchiel|Ezechiel|Daniel|Osée|Osee|Joël|Joel|Amos|Abdias|Jonas|Michée|Michee|Nahum|Habacuc|Sophonie|Aggée|Aggee|Zacharie|Malachie|Matthieu|Marc|Luc|Jean|Actes|Romains|Corinthiens|Galates|Éphésiens|Ephesiens|Philippiens|Colossiens|Thessaloniciens|Timothée|Timothee|Tite|Philémon|Philemon|Hébreux|Hebreux|Jacques|Pierre|Jude|Judas|Apocalypse)\s\d{1,3}(?:\s?[,;:.–-]\s?\d{1,3}(?:[–-]\d{1,3})?)?)\b/gu;
 
 /** POST /api/tts request body */
 export interface TtsRequestBody {
@@ -215,6 +239,82 @@ export interface TtsRequestBody {
   speed?: number; // 0.5..2.0
   language?: DocLanguage; // optional hint; auto-detected if absent
 }
+
+// ---------- Exams ----------
+
+export type ExamKind = "qcm" | "qa" | "mixte";
+export type ExamLinkStatus = "pending" | "linked" | "sans";
+export type ExamQuestionType = "qcm" | "qa";
+
+export interface ExamQuestionDTO {
+  id: string;
+  idx: number;
+  type: ExamQuestionType;
+  prompt: string;
+  options: string[]; // QCM options ("A. …", "B. …")
+  answer?: string | null; // agent answer (option letter + text for QCM)
+  refs: string[]; // biblical / course references cited
+  rationale?: string | null; // justification + course excerpts used
+  answered: boolean;
+}
+
+export interface ExamMessageDTO {
+  id: string;
+  role: "user" | "agent";
+  content: string;
+  refs: string[];
+  createdAt: string;
+}
+
+export interface ExamDTO {
+  id: string;
+  title: string;
+  subject: string;
+  kind: ExamKind;
+  fileName?: string | null;
+  linkStatus: ExamLinkStatus;
+  theology: boolean; // theology/biblical context detected
+  questionCount: number;
+  answeredCount: number;
+  documentIds: string[];
+  documentTitles: { id: string; title: string }[];
+  createdAt: string;
+}
+
+export interface ExamDetailDTO extends ExamDTO {
+  rawText: string;
+  questions: ExamQuestionDTO[];
+  messages: ExamMessageDTO[];
+}
+
+export type ExamPhase = "parse" | "solve" | "chat";
+
+/** SSE events for /api/exams/[id]/parse | /solve | /chat */
+export type ExamEvent =
+  | { type: "exam.start"; phase: ExamPhase; examId: string }
+  | { type: "agent.start"; id: AgentId; label: string }
+  | { type: "agent.log"; id: AgentId; message: string }
+  | { type: "agent.done"; id: AgentId; label: string; summary: string; content?: string }
+  | { type: "agent.error"; id: AgentId; message: string }
+  | {
+      type: "exam.parsed";
+      kind: ExamKind;
+      subject: string;
+      theology: boolean;
+      questions: ExamQuestionDTO[];
+    }
+  | { type: "question.answered"; question: ExamQuestionDTO }
+  | { type: "chat.token"; token: string }
+  | { type: "chat.saved"; message: ExamMessageDTO }
+  | { type: "exam.done" }
+  | { type: "exam.error"; message: string };
+
+export const EXAM_AGENT_ORDER: { id: AgentId; label: string }[] = [
+  { id: "examiner", label: "📋 Examinateur" },
+  { id: "retriever", label: "🔍 Chercheur" },
+  { id: "solver", label: "✍️ Résolveur" },
+  { id: "verifier", label: "🧾 Vérificateur" },
+];
 
 /** POST /api/revision request body */
 export interface RevisionRequestBody {

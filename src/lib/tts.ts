@@ -61,9 +61,13 @@ export function splitTtsText(text: string, maxLen = 900): string[] {
 
 // ---------- Voice ----------
 
-/** Default voice per course language: fr → tongtong, en → jam. */
+/**
+ * Default voice per course language — chuichui measured best for French
+ * (ASR round-trip test), jam is the British English voice.
+ * For a native French accent the client prefers the system engine instead.
+ */
 export function autoVoice(lang: DocLanguage): string {
-  return lang === "en" ? "jam" : "tongtong";
+  return lang === "en" ? "jam" : "chuichui";
 }
 
 // ---------- LRU cache ----------

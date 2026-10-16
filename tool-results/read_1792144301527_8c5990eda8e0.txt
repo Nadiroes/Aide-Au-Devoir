@@ -1,0 +1,240 @@
+     1→# Worklog — Aide au Devoir ( Homework Help App )
+     2→
+     3→Project: Next.js 16 + TypeScript + Tailwind 4 + shadcn/ui + Prisma/SQLite.
+     4→Goal (from user's pasted spec): French homework-help app.
+     5→- Import courses (PDF, DOCX, TXT, PNG, JPEG) with title + subject.
+     6→- Ingestion agents scan documents and announce when ready (real-time SSE).
+     7→- Multi-agent chat pipeline: Planificateur → Chercheur (RAG) → Solveur → Tuteur, streamed agent-by-agent.
+     8→- API key management for Mistral + Agnes (test / save encrypted / delete / status) + built-in Z.ai provider so the app works without keys.
+     9→- Single visible route `/` (tab navigation: Accueil, Cours, Assistant, Paramètres).
+    10→
+    11→Key decisions (Task 1):
+    12→- Everything in Next.js (no separate Python backend). Node ports of ingestion + retrieval + LLM router.
+    13→- PDF text: `unpdf`; DOCX: `mammoth`; TXT/MD: direct read; PNG/JPEG: z-ai VLM (base64 data URL) with tesseract CLI fallback.
+    14→- Vector store replaced by BM25 lexical search over Chunks in SQLite (French-aware normalization: accent-strip, stopwords, plural-stem) — robust, zero external services.
+    15→- API keys encrypted with AES-256-GCM (`src/lib/secretbox.ts`), master key from env MASTER_KEY or auto-generated `db/master.key`. Never returned raw — masked only.
+    16→- LLM providers: `zai` (built-in SDK, default, no key), `mistral` (api.mistral.ai, streaming SSE), `agnes` (OpenAI-compatible adapter configured via AGNES_BASE_URL/AGNES_MODEL/AGNES_TEST_PATH/AGNES_AUTH_STYLE env vars).
+    17→- SSE contract defined in `src/lib/types.ts` (shared client/server types).
+    18→
+    19→---
+    20→Task ID: 1
+    21→Agent: main (Z.ai Code)
+    22→Task: Init worklog, Prisma schema, db push, install deps
+    23→
+    24→Work Log:
+    25→- Read pasted spec (upload/Pasted Content_1792062759835.txt) and loaded LLM/VLM skill docs.
+    26→- Inspected project scaffold (package.json, prisma, db.ts, ui components all present).
+    27→- Created this worklog.
+    28→
+    29→Stage Summary:
+    30→- Schema defined in prisma/schema.prisma: Document, Chunk, ApiKey, ChatMessage.
+    31→- Dependencies installed: unpdf (PDF), mammoth (DOCX).
+    32→
+    33→---
+    34→Task ID: 2
+    35→Agent: main (Z.ai Code)
+    36→Task: Backend — API routes + SSE pipelines (documents upload, chat, keys, stats)
+    37→
+    38→Work Log:
+    39→- src/lib/types.ts: shared DTOs + SSE event contracts (ChatEvent, IngestEvent).
+    40→- src/lib/secretbox.ts: AES-256-GCM encryption of API keys (master key env or db/master.key).
+    41→- src/lib/ingestion.ts: extractText (unpdf/mammoth/txt-md/VLM vision OCR + tesseract fallback) + French-aware chunkText (~900 chars, sentence boundaries, overlap).
+    42→- src/lib/search.ts: BM25 over Chunk rows (accent-strip, stopwords, plural stem), in-memory cache + invalidateSearchCache().
+    43→- src/lib/llm.ts: providers zai (built-in SDK, simulated token streaming, system→assistant role mapping), mistral (real SSE streaming), agnes (OpenAI-compatible via env AGNES_BASE_URL/MODEL/TEST_PATH/AUTH_STYLE); getStoredKey decrypts from DB.
+    44→- src/lib/agents.ts: runChatPipeline(opts, emit) — Planificateur → Chercheur (BM25 RAG) → Solveur (token stream) → Tuteur; persists ChatMessage; abort-aware.
+    45→- src/lib/sse-server.ts: sseResponse(handler, signal) → text/event-stream Response; wire format `data: {json}\n\n` (client parses `type` field).
+    46→- Routes: /api/documents (GET list, POST upload→SSE ingest events), /api/documents/[id] DELETE, /api/keys GET, /api/keys/test POST, /api/keys/save POST, /api/keys/[provider] DELETE, /api/chat (GET history, POST SSE pipeline), /api/stats GET.
+    47→- layout.tsx switched to French (lang="fr"), new metadata, sonner Toaster.
+    48→
+    49→Verified with curl:
+    50→- GET /api/keys, /api/stats, /api/documents ✓
+    51→- POST /api/documents (txt) → SSE: Lecteur → Découpeur → Indexeur → ingest.done ✓
+    52→- POST /api/chat (zai) → pipeline.start, agent.start/log/done ×4, answer.token stream, retrieval.hit (BM25 score 1.857 on uploaded course), pipeline.done with persisted messageId ✓
+    53→
+    54→Stage Summary:
+    55→- Backend 100% functional; API contract stable for frontend:
+    56→  - SSE format: single `data:` line per event, JSON with `type` discriminator.
+    57→  - Types importable client-side from "@/lib/types" (type-only imports).
+    58→
+    59→---
+    60→Task ID: 3
+    61→Agent: full-stack-developer
+    62→Task: Frontend — single-page UI (tabs Accueil/Cours/Assistant/Paramètres), SSE clients, all sections
+    63→
+    64→Work Log:
+    65→- Read worklog + src/lib/types.ts (contract) and inspected ui components (card/button/alert/select/collapsible/progress APIs confirmed).
+    66→- src/lib/sse-client.ts: postSse<T>(url, body, onEvent, signal?) — POST JSON or FormData, reads res.body.getReader(), buffers, splits on \n\n (CRLF-tolerant), parses `data:` lines, supports AbortSignal; throws server {message|error} on non-ok; exports isAbortError helper.
+    67→- src/lib/api-client.ts: typed wrappers (fetchDocuments, deleteDocument, fetchProviders, testApiKey, saveApiKey, deleteApiKey, fetchChatHistory, fetchStats) + ApiError; key test/save treat HTTP 400 {ok:false,message} as a normal result (not an exception).
+    68→- src/app/globals.css: appended `.scroll-thin` utility (6px webkit scrollbar + scrollbar-width: thin, thumb bg-border).
+    69→- src/components/app-header.tsx: sticky border-b header, emerald-600 logo square + bold title, 4 nav buttons (active bg-emerald-600 text-white), labels hidden sm:inline, nav overflow-x-auto; exports TabId type.
+    70→- src/components/app-footer.tsx: border-t, mt-auto, centered muted text, pb uses max(1rem, env(safe-area-inset-bottom)).
+    71→- src/components/agent-status.tsx: reusable AgentStatusList (chat + ingest agents) — status icons (Circle/Loader2-spin/CheckCircle2-emerald/AlertCircle-red), badges "en attente / en cours… / prêt / erreur", last 3 logs, done content in pre-wrap block; per-agent amber/teal/emerald/rose accents.
+    72→- src/components/markdown-view.tsx: shared react-markdown renderer with prose-like Tailwind arbitrary-variant styling (headings, lists, code, tables, blockquote; links emerald).
+    73→- src/components/dashboard-section.tsx: fetches /api/stats + /api/chat on mount; 4 stat cards (BookOpen/Layers/MessageSquare/KeyRound) with skeletons; 3 quick-action buttons navigating tabs; "Comment ça marche" 3 steps; "Dernières questions" (last 3, max-h-56 scroll).
+    74→- src/components/documents-section.tsx: upload card (title/subject inputs, drag & drop zone + hidden input, accepted formats, emerald Importer button disabled unless file+title), live Progress + AgentStatusList driven by POST /api/documents SSE events (agent.start/log/done/error, ingest.start/done/error), success Alert auto-hide 6s, toast on done/error; documents list (count heading, empty state, per-doc card with subject/kind badges, fr-FR formatted stats, AlertDialog delete confirm + toast, max-h-[480px] scroll).
+    75→- src/components/assistant-section.tsx: question card (Textarea, Ctrl/⌘+Enter submit, mode Select cours/libre, provider Select from /api/keys with disabled "(non configurée)" options + auto-correct selection, emerald Envoyer flex-1, Stop outline Square button aborting the stream and reverting running agents to idle); full ChatEvent state machine (pipeline.start/agent.*/retrieval.hit/answer.token/tutor.token/pipeline.done/pipeline.error) with toasts; answer card (fade-in via framer-motion, streamed markdown + pulsing ▍ cursor while solver runs, auto-scroll, Separator + "👨‍🏫 Fiche élève" tutor block); collapsible Historique (default collapsed while busy, expandable items with full answer + tutor + sources count); right column sticky: Agents list (planner plan shown via content) + "📎 Passages retenus" hits card (title, subject badge, score, line-clamp-3 preview, max-h-80 scroll).
+    76→- src/components/settings-section.tsx: fetches /api/keys; per-provider cards with badges (Inclus/Configurée emerald/Non configurée); agnes serverReady=false → amber AlertTriangle alert + disabled form; zai = no form ("Aucune clé nécessaire"); mistral/agnes password input with Eye/EyeOff + KeyRound, inline test Alert (CheckCircle2/XCircle), Tester (outline, FlaskConical) + Vérifier & enregistrer (emerald, Save) with Loader2 states, Enter triggers test; configured row shows masked key + Clock verifiedAt + Trash2 AlertDialog delete; security card (ShieldCheck, 4 bullets).
+    77→- src/app/page.tsx: "use client" root — min-h-screen flex flex-col, AppHeader, main max-w-6xl mx-auto px-4 py-6 md:py-8 flex-1 with tab-conditional sections, AppFooter (sticky-footer rule respected). No other routes created.
+    78→
+    79→Stage Summary:
+    80→- bun run lint: PASS (0 errors/warnings). GET / → 200, dev.log shows only "✓ Compiled" (no errors).
+    81→- Verified /api/keys, /api/stats, /api/documents response shapes match api-client parsing; live POST /api/chat SSE stream (pipeline.start → planner plan content → retrieval.hit → answer.token) matches sse-client parser.
+    82→- Full French UI, emerald accent (no blue/indigo), responsive mobile-first, ≥44px touch targets on primary controls, thin scrollbars on all long lists, sonner toasts on every action outcome.
+    83→- Files: src/lib/{sse-client,api-client}.ts, src/components/{app-header,app-footer,agent-status,markdown-view,dashboard-section,documents-section,assistant-section,settings-section}.tsx, src/app/page.tsx (replaced), src/app/globals.css (appended utility only). No backend files touched, layout.tsx untouched.
+    84→
+    85→---
+    86→Task ID: 4 & 5
+    87→Agent: main (Z.ai Code)
+    88→Task: Frontend review + Agent Browser E2E verification
+    89→
+    90→Work Log:
+    91→- Reviewed subagent code (page.tsx, sse-client, api-client, assistant/documents/settings sections, agent-status): contract-correct, typed, lint clean.
+    92→- Agent Browser E2E on http://localhost:3000/ :
+    93→  - Dashboard: renders (stats 1 cours / 1 segment / 1 question / 0 clés at first load), quick actions navigate.
+    94→  - Cours tab: uploaded a generated PNG course ("Maths - Les fractions") via the UI -> SSE agent progress shown (Lecteur "en cours" with log, Découpeur, Indexeur) -> document created with "Extraction : OCR (vision)", 308 chars extracted by the VLM (accents preserved, verified chunk content).
+    95→  - Assistant tab: asked "Comment additionne-t-on deux fractions ?..." -> Planificateur prêt (plan displayed), Chercheur: "1 passage pertinent trouvé" + Passages retenus card (score 1.17), Solveur streamed markdown answer citing "d'après le cours Maths - Les fractions" with the exact 1/4+2/4=3/4 example from the OCR'd PNG, Tuteur fiche élève complete, Historique updated to 2.
+    96→  - Paramètres tab: 3 provider cards (Z.ai inclus, Mistral, Agnes); tested an INVALID Mistral key -> live verification against api.mistral.ai returned 401 -> red inline alert + toast "Clé Mistral refusée (401)". Agnes disabled with serverNote. Security card present.
+    97→  - Delete dialog: opens and cancels correctly.
+    98→  - Responsive: mobile 375px nav collapses to icons, layout stacks.
+    99→  - Footer: min-h-screen flex-col + mt-auto verified; on long pages pushed naturally (docH 1420 > viewport 812), at viewport bottom when scrolled.
+   100→  - No console errors, no page errors, no hydration warnings; bun run lint passes.
+   101→
+   102→Stage Summary:
+   103→- App fully verified end-to-end in a real browser: import (TXT + PNG/OCR), multi-agent RAG chat with citations, API key live verification, settings CRUD paths, responsive layout, sticky footer.
+   104→- Test data left intentionally: 2 demo courses (SVT txt + Maths PNG-OCR) so the user can try RAG immediately.
+   105→
+   106→---
+   107→Task ID: 2-a
+   108→Agent: full-stack-developer
+   109→Task: Backend — folders, document editing/re-chunking, revision Q&A + SSE pipeline, TTS/ASR, self-learning memory, stats
+   110→
+   111→Work Log:
+   112→- Read worklog + frozen contract src/lib/types.ts (FolderDTO, DocumentDTO v2, DocumentDetailDTO, RevisionQADTO, AgentMemoryDTO, StatsDTO v2, RevisionEvent, RevisionRequestBody, TtsRequestBody, coach/evaluator/learner agents, TTS_VOICES) and followed existing patterns (db.ts, sse-server.ts, llm.ts, agents.ts, ingestion.ts, search.ts, documents/chat/stats routes).
+   113→- src/lib/language.ts: detectLanguage (accent count ×2 + FR/EN stopword scoring on first 4000 chars, tokenized split to avoid JS \b issues with accented words, ties/empty → "fr") + languageLabel ("Français (FR)" / "Anglais (EN)").
+   114→- src/lib/tts.ts (backend-only SDK): splitTtsText (sentence boundaries [.!?\n…], accumulate ≤900, hard-slice fallback), singleton ZAI.create() promise via getZaiClient() (also reused by /api/asr), autoVoice (fr→tongtong, en→jam), in-memory LRU cache Map keyed voice|speed|sha1(text) with 48 MB byte-budget eviction (oldest-inserted, recency refresh on hit), synthesizeSpeech (clamp speed 0.5–2, strip markdown chars [*#`|_~>], collapse whitespace, ≤900 chars via splitTtsText[0], zai.audio.tts.create({input,voice,speed,response_format:"wav",stream:false}) → arrayBuffer → Buffer, French error "Synthèse vocale indisponible : …").
+   115→- src/lib/memory.ts: buildMemoryContext (top 12 by weight desc/updatedAt desc, scope OR[documentId null, =doc], "- [kind] content (weight w)", "" on any failure), MemoryOp type, applyMemoryOps (add with case-insensitive dedupe→reinforce, reinforce weight+0.5 cap 5 & hits+1, weaken weight−0.3 floor 0.2; per-op + global try/catch so memory never breaks the pipeline), memoryToDTO (with documentTitle).
+   116→- src/lib/revision.ts: runRevision(body, emit) mirroring agents.ts — document validation before revision.start; provider via getProvider(body.provider ?? "zai"); memory profile block ("PROFIL DE L'ÉLÈVE…") + output-language rule injected into every system prompt; actions: greet (no LLM, deterministic French greeting streamed word-by-word /(\s+)/ + 12ms, coach start/done "Cours prêt", NO QA row), question (2 random chunk samples + last 8 QAs as "déjà posées (ne répète PAS)" + avoidIds filter, streamed via message.token, agent.done carries the question), answer (BM25 searchChunks(question) filtered to doc top-2 → courseContext else textContent[:1500]; non-streaming evaluator → robust JSON parse (fences stripped, first {…last }) with fallback verdict "info"/score 50/raw[:500]; emits evaluation → persists RevisionQA (source "coach" if qaId else "user") → qa.saved → agent.done "Verdict — score N/100" → learner agent (existing memories w/ ids in prompt, max-3 ops JSON parsed+sanitized, applyMemoryOps, new rows re-fetched and emitted as memory.saved, summary "N apprentissage(s) enregistré(s)" / "0 apprentissage notable")), ask (streamed coach answer from course passage only, saves QA verdict "info" source "user" → qa.saved). Whole pipeline wrapped: any throw → revision.error (friendly French) + console.error. Exports qaToDTO (reused by /api/qa routes).
+   117→- Routes created: /api/folders (GET sorted by name w/ _count.documents, POST name ≤60 + color #RRGGBB default #059669 → 201, 400 on invalid), /api/folders/[id] (PATCH same validations → FolderDTO, DELETE; schema SetNull detaches docs), /api/qa (GET documentId required, filter all|visible|hidden|arevoir|moyen|connu, sort recent|oldest|verdict(wrong,partly,correct,info)|rating(arevoir,moyen,connu,null) JS-side, limit ≤500, take 1000 then JS sort+slice), /api/qa/[id] (PATCH hidden/rating connu|moyen|arevoir|null/answer/feedback → bare RevisionQADTO, DELETE → {ok:true}), /api/qa/clear (POST shown→hide visible, hidden→delete hidden, all→delete if alsoDelete else hide; returns {count}), /api/tts (TtsRequestBody, guard ≤9000 then slice 900 via synthesizeSpeech, WAV response w/ Content-Type audio/wav + Content-Length + Cache-Control private max-age=86400, 400/500 JSON errors), /api/asr (FormData "audio" File → base64 → zai.audio.asr.create({file_base64}) → {text}, 400 no file/empty, 20 MB guard, multi-shape result extraction), /api/revision (POST → sseResponse + runRevision exactly like /api/chat, GET → 405), /api/memory (GET top 200 w/ document title → {memories}, DELETE ?id= one / no id → deleteMany, returns {ok, deleted}).
+   118→- Routes updated: /api/stats → StatsDTO v2 (documents, folders, chunks, questions=RevisionQA, chatQuestions=ChatMessage, memoryCount, keysConfigured, languages{fr,en} via 2 counts — single Promise.all); /api/documents GET → folder include + _count.revisionQAs + 3 groupBys (arevoir/connu/rated) merged in JS → language, folderId/Name/Color, qaCount, qaToReview, mastery=round(connu/rated×100) or 0; POST → textContent=text, language=detectLanguage(text), agent.log "Langue détectée : Français (FR)" emitted under Lecteur, ingest.done uses new toIngestDTO; /api/documents/[id] → +GET DocumentDetailDTO (per-doc counts incl. rated/connu for mastery) and +PATCH {title?,subject?,folderId?(null-able, existence-checked),language?(fr|en),textContent? — changed text ⇒ chunkText re-chunk in $transaction (deleteMany chunks → update doc w/ chars+chunks → createMany), invalidateSearchCache()} while keeping DELETE.
+   119→- Ops fix: the long-running dev server process predated the prisma client regeneration → globalThis singleton held a client WITHOUT Folder/RevisionQA/AgentMemory (db.folder undefined, 500s). Restarted the dev server (new process picked up the regenerated client). No db:push/migrate run; no types.ts/frontend/sse-client/api-client/globals.css file touched.
+   120→
+   121→Verified with curl (server on :3000):
+   122→- Folders CRUD: GET [] → POST 201 (DTO w/ documentCount) → PATCH rename → GET → DELETE {ok:true}; POST {"name":""} → 400. Folder attach: PATCH doc {folderId} → folderName/folderColor in list & detail; folder DELETE → doc detached (SetNull).
+   123→- Upload /tmp/cours-fractions.txt (758 chars) → SSE ingest.* incl. "Langue détectée : Français (FR)"; ingest.done DTO has language/qaCount/qaToReview/mastery/folder*; GET /api/documents shows qaCount 2 / qaToReview 1 / mastery 0→100 after rating connu.
+   124→- PATCH doc: rename OK; textContent change → re-chunk 1→2 segments, chars 758→1250, chunks invalidated; empty title → 400.
+   125→- POST /api/revision greet → revision.start, agent.start coach, message.token word stream ("Bonjour ! J'ai fini de lire « Maths — Les fractions » (1 segment extrait, 758 caractères, langue Français)… On commence la révision ?"), agent.done "Cours prêt", revision.done (no QA row).
+   126→- POST /api/revision question → coach logs + streamed question "Comment additionner correctement les fractions 3/8 et 5/12 ?" + agent.done(content=question) + revision.done; second run adapted (2/5 et 3/10) with memory present.
+   127→- POST /api/revision answer → agent.start Évaluateur, retrieval logs, evaluation {verdict wrong, score 0, feedback, modelAnswer} → qa.saved → "À revoir — score 0/100" → 🧠 Mémoire: memory.saved weakness "Confond l'addition des fractions…" + "1 apprentissage enregistré" + revision.done. Re-run with correct answer → verdict correct/100, memory.saved strength "L'élève maîtrise l'addition de fractions de même dénominateur". Empty userAnswer → revision.error "Réponse vide"; GET /api/revision → 405; bad body → 400.
+   128→- POST /api/revision ask → streamed coach answer (2 phrases, exact course rule 2/3×3/5=6/15=2/5) + qa.saved (verdict info, source user) + revision.done.
+   129→- /api/qa: list (2 rows), filter=arevoir/hidden, sort=rating (arevoir before null), PATCH rating connu/arevoir + hidden true/false, POST clear mode=hidden → {count:1} (deleted), mode=shown → {count:1} (hidden).
+   130→- /api/memory: GET 1–2 insights w/ documentTitle, DELETE ?id → {ok:true,deleted:1}; DELETE all tested via count return.
+   131→- /api/stats: {"documents":4,"folders":0,"chunks":228,"questions":2,"chatQuestions":9,"memoryCount":1,"keysConfigured":1,"languages":{"fr":4,"en":0}}.
+   132→- /api/tts: 227 856 octets, file(1) = "RIFF … WAVE audio, PCM 16 bit, mono 24000 Hz" (http 200 in 2.0s); 2nd identical call = cache HIT (13 ms, same bytes; [tts] cache HIT logged server-side only); empty text → 400; language "en" (jam) → valid WAV.
+   133→- /api/asr: no file → 400; round-trip POST of the TTS wav → {"text":"Bonjour, Ceci S N test de lecture audio"} (200).
+   134→- eslint on the 20 task files: PASS (0/0). Full `bun run lint`: 1 error + 3 warnings ALL inside the parallel frontend agent's in-progress src/components/memory-card.tsx + revision-section.tsx (frozen zone for task 2-a). tsc --noEmit: zero errors in task files (remaining hits are pre-existing examples/skills/ingestion vision typing + frontend WIP). dev.log: no compile/runtime errors from task files.
+   135→
+   136→Stage Summary:
+   137→- Full revision backend live and contract-exact: 4 SSE actions (greet deterministic, question adaptive w/ avoidIds, answer evaluator→JSON verdict/score/feedback/modelAnswer→RevisionQA persist→learner self-memory, ask course-grounded answer), memory profile injected in all prompts + output-language rule from Document.language.
+   138→- Deliverables: src/lib/{language,tts,memory,revision}.ts + routes folders, folders/[id], qa, qa/[id], qa/clear, tts, asr, revision, memory + updated documents, documents/[id], stats. qaToDTO shared from revision.ts, memoryToDTO from memory.ts (no contract duplication).
+   139→- Deviations: (1) dev server restart required — stale pre-regeneration PrismaClient in the old process; (2) greeting uses bare "Français/Anglais" inside the sentence (spec's "{Français|Anglais}") to avoid "…langue Français (FR))." double-paren artifact; (3) "question" chunk sampling = 2 random distinct chunks (recent-QA→chunk mapping isn't stored, so "prefer unused" degrades to random as the spec allows); (4) /api/qa/... PATCH/POST single-resource endpoints return the bare DTO (spec wording) while list endpoints keep the {items} wrapper of the existing style.
+   140→
+   141→---
+   142→Task ID: 2-b
+   143→Agent: full-stack-developer (recovered by main — agent hit context deadline after implementation, before verification)
+   144→Task: Frontend — Révision tab (Q&A coach + TTS player + ASR mic), folders & document editing, post-import redirect, agent memory card, audio settings
+   145→
+   146→Work Log:
+   147→- Implemented against frozen contract types.ts: revision-section.tsx (1494 lines), memory-card.tsx, hooks/use-tts-player.ts, hooks/use-recorder.ts, api-client.ts extensions, page.tsx/app-header.tsx (TabId + "Révision" nav), documents-section.tsx (folders bar, dropdown actions, language badges), settings-section.tsx (Audio & Voix + getTtsPrefs), assistant-section.tsx (Volume2 read-aloud + MemoryCard), dashboard-section.tsx (StatsDTO v2 cards).
+   148→- Main agent verified completeness via grep/lint after timeout: all contract pieces present, `bun run lint` PASS (0 errors).
+   149→
+   150→Stage Summary:
+   151→- All frontend deliverables landed and lint-clean; E2E verification performed by main (Task 3).
+   152→
+   153→---
+   154→Task ID: 3
+   155→Agent: main (Z.ai Code)
+   156→Task: E2E browser verification of the full revision + audio + folders + memory feature set
+   157→
+   158→Work Log:
+   159→- agent-browser on http://localhost:3000: dashboard 5-tab nav (Accueil/Cours/Révision/Assistant/Paramètres).
+   160→- Cours: created folder "Théologie Biblique" (6-color palette popover, toast), moved "Doctrines Biblique" into it via actions menu (count 0→1, toast), folder chip filter shows "Mes cours (1)" only that doc; doc cards show FR/EN badges, question counts; actions menu = Réviser/Écouter/Renommer/Modifier le texte/Déplacer vers…/Supprimer.
+   161→- Post-import flow: uploaded "La Photosynthèse (SVT)" via UI → toast "importé — 2 segments indexés" → AUTO-redirect to Révision tab with doc preselected + greeting bubble "J'ai lu « La Photosynthèse (SVT) » en entier. On commence la révision ?" [Oui, commence !] [Plus tard]. ✅ user requirement met.
+   162→- Coach SSE: "Oui, commence !" → coach streamed Q1 "Quels sont les trois facteurs limitants de la photosynthèse…?" with agents strip (Coach/Évaluateur/Mémoire) + "Écouter la question du coach" button.
+   163→- Evaluation: submitted a partly-wrong answer → "🟡 Partiel — score 60/100" + precise feedback + "Réponse attendue" collapsible + rating buttons Je sais/Moyen/À revoir. Rated "À revoir 🔁" (toast OK).
+   164→- Clear/show: "Effacer les réponses" → card collapses to "Réponse effacée de l'écran — conservée dans la fiche 👁️" + Afficher button (stored, not deleted); "Tout afficher" restores; sort "À revoir d'abord" works; Exporter .md fires download; mastery shows 0% (À revoir) — correct math.
+   165→- Audio: "Lancer la lecture audio" → "Segment 1 / 10" + current sentence highlighted, server POST /api/tts 200 (892 KB WAV tongtong), Stop resets. Speed/voice selectors present (Voix auto (FR)). Settings "🔊 Audio & Voix" card: voice (Auto FR→Tongtong EN→Jam), speed, autoread switch, "Tester la voix".
+   166→- Adaptive self-learning: next coach question targeted the EXACT confusion mémorisée (photosynthèse vs respiration); correct answer → "✅ Correct"; /api/memory shows 3 insights incl. reinforced weakness (weight 1.5, hits 1); Assistant tab card "🧠 Mémoire de l'assistant (3)" lists kind badges + doc titles + Tout effacer.
+   167→- EN detection: curl upload "The Water Cycle" → "Langue détectée : Anglais (EN)", language "en", EN badge in list, /api/tts language:en → valid WAV (jam).
+   168→- Mobile 375px: nav scroll-x, 2 cards stacked, no h-scroll (scrollW=375), footer reachable. Desktop 1280/1440: 2-col grid.
+   169→- Console errors: 0. Page errors: 0. bun run lint: PASS. dev.log: only clean 200s (tts/qa/folders/documents), no compile errors.
+   170→
+   171→Stage Summary:
+   172→- Feature set verified end-to-end in a real browser: import→auto-revision greeting→adaptive coaching→evaluation→self-assessment→clear/show/sort/export→TTS before/during/after→ASR mic wiring→folders/renaming/editing→EN/FR detection→persistent self-learning memory.
+   173→- Test data left: 6 docs (5 FR + 1 EN), folder "Théologie Biblique", 2 revision QAs on Photosynthèse, 3 memory insights — user can explore immediately.
+   174→
+   175→---
+   176→Task ID: 2-c
+   177→Agent: full-stack-developer
+   178→Task: Backend — EPUB + audio ingestion (ffmpeg/ASR), scanned-doc review status, save-pdf (pdf-lib) + PDF serving
+   179→
+   180→Work Log:
+   181→- Read worklog (tasks 1/2/2-a/2-b/3), frozen src/lib/types.ts (untouched), ingestion.ts, documents routes, asr/tts/search/db.
+   182→- src/lib/ingestion.ts:
+   183→  - SUPPORTED_EXTENSIONS += .epub, .mp3, .wav, .m4a, .ogg, .webm, .aac, .flac; KIND_OVERRIDES in kindFromFileName maps all audio extensions → kind "audio" (others keep ext-derived kind).
+   184→  - epubToText(buffer) via adm-zip (no XML parser dep): container.xml → <rootfile full-path> → OPF regex-parsed (manifest id→href/media-type, spine itemref order) → spine XHTML/HTML entries (media-type or .xhtml/.html/.htm), hrefs resolved relative to OPF dir (normalizeZipPath handles ../, ./, leading /, URL-decode, #anchors, case-insensitive entry fallback). htmlToText: strips script/style/head + comments, <br> & closing p/div/h1-6/li/tr/section/article/blockquote/figcaption/dd/dt → \n, strips remaining tags, decodes &lt; &gt; &quot; &apos; &nbsp; + numeric &#NNN;/&#xNN; (safeCodePoint guards surrogates/control codes) + ~40 common named entities (French/Latin-1 focus: &eacute; &egrave; &mdash; &oelig; …) with &amp; decoded LAST (single-pass, "&amp;lt;" stays "&lt;"), collapses 3+ \n → 2. French "EPUB illisible : …" errors (archive corrompue / container.xml manquant / rootfile sans full-path / OPF introuvable / manifest vide / aucun chapitre). Empty chapters skipped; chapters joined "\n\n"; returns {text, chapters}.
+   185→  - transcribeAudioFile(buffer, fileName, onProgress): 80 MB guard ("Fichier audio trop volumineux (max 80 Mo). Découpe-le ou convertis-le en mp3."), tmp /tmp/ad-audio-<ts>/input.<ext>, ffmpeg -vn -f segment -segment_time 420 -ac 1 -ar 16000 seg_%03d.wav (execFileAsync timeout 300 s) → French error "Conversion audio impossible (ffmpeg indisponible) : …" on failure; readdir+sort segments, per-segment base64 → getZaiClient().audio.asr.create({file_base64}) with the same multi-shape .text/.data.text extraction as /api/asr; failed segment → " [segment N non transcrit]" marker + continue; onProgress(`Transcription : segment i/total…`); join " " + collapse whitespace; all-empty (markers stripped) → "Aucune parole détectée dans le fichier audio."; temp dir rmSync recursive+force in finally.
+   186→  - extractText gains optional 3rd param onProgress, new "epub" branch (method "EPUB — N chapitre(s) extrait(s)", pages null) and "audio" branch (method "Transcription audio (ASR) — N segment(s)").
+   187→- src/lib/doc-dto.ts (NEW): getDocumentDetailDTO(id) — DocumentDetailDTO mapper identical to the frozen [id]/route.ts logic (no auto-heal), used by save-pdf only.
+   188→- src/app/api/documents/route.ts: extractText call passes onProgress → agent.log events on "reader" (same emit pattern); upload size guard now 80 MB for audio kind / 25 MB otherwise (dynamic message); invalid-format message lists EPUB + audio formats; after extraction, OCR image kinds (png/jpg/jpeg/webp) create with status "à vérifier" and note "Extraction : {method} — vérifie les mots mal reconnus avant d'enregistrer en PDF." (+ " Peu de texte détecté — la photo est-elle nette et complète ?" when text < 40 chars); other kinds keep "prêt". ingest.done DTO unchanged (status field already in contract).
+   189→- NEW POST src/app/api/documents/[id]/save-pdf/route.ts (runtime nodejs, force-dynamic): validates id (safe-char regex) + {text} non-empty (400 FR) + doc exists (404); step order per spec: 1) chunkText re-chunk in $transaction (deleteMany chunks → update doc {textContent, chars, chunks, kind "pdf", status "prêt", fileName `${sanitized title}.pdf` [strip non \p{L}\p{N}/space/dash, collapse spaces, ≤80, ".pdf", fallback "cours.pdf"], note "Texte corrigé par l'élève — PDF généré."} → createMany chunks) → 2) buildCoursePdf (pdf-lib: A4 595.28×841.89, margins 56, Helvetica + Helvetica-Bold, title bold 18 wrapped, subject + fr-FR date line 10 pt gray, body 11 pt / line height 16, font-measured greedy word wrap (≈95 chars) with hard-slice for pathological tokens, blank \n → 8 pt spacing, page break under margin, 200-page cap + bottom "... (tronqué)" note, WinAnsi sanitization: curly quotes/apostrophes→', dashes→-, …→..., nbsp→space, bullet→-, tab→2 spaces, then drop chars outside CP1252 set — French accents « » é è ç pass through) → 3) fs.writeFileSync /home/z/my-project/upload/documents/{id}.pdf (mkdir recursive) → 4) invalidateSearchCache() → 5) 200 DocumentDetailDTO via doc-dto helper. PDF-gen failure → 500 FR (DB already committed per specified order).
+   190→- NEW GET src/app/api/documents/[id]/pdf/route.ts: safe-id + doc lookup → 404 {message "PDF non encore généré pour ce cours."} if doc/file missing; serves upload/documents/{id}.pdf with Content-Type application/pdf, Content-Disposition inline (ASCII fallback filename + filename*=UTF-8''), Content-Length, Cache-Control no-store.
+   191→- No changes to: types.ts, prisma schema, documents/[id]/route.ts (auto-heal untouched), sse-client, api-client, frontend files. Dev server not restarted.
+   192→
+   193→Verified with curl (hot-reload server :3000):
+   194→- EPUB (hand-built minimal 2-chapter epub via zip CLI: mimetype stored, container.xml, OPF w/ manifest+spine incl. nested OEBPS/text/ch2.xhtml + css item + <script>): SSE ingest.done {kind "epub", chars 358, note "Extraction : EPUB — 2 chapitres extraits", status "prêt"}; detail textContent contains both chapters with entities decoded (— – é è ê ' « », &amp;→&), script/style/head stripped, <br>/<li> → newlines.
+   195→- Audio: /api/tts French text → speech.wav (RIFF PCM 24 kHz) upload → SSE reader logs "Transcription : segment 1/1…", ingest.done {kind "audio", note "Extraction : Transcription audio (ASR) — 1 segment"}, textContent non-empty (ASR output mangled by the engine but pipeline end-to-end OK). ffmpeg sine 440 Hz → hallucinated tiny text → clean ingest.error at chunker ("Aucun texte exploitable après découpage."). speech.mp3 (different ext) → same pipeline OK.
+   196→- PNG (sharp SVG→PNG): ingest.done {kind "png", status "à vérifier", note "Extraction : OCR (vision) — vérifie les mots mal reconnus avant d'enregistrer en PDF."} (201 chars → no short-text hint, as designed).
+   197→- save-pdf on that doc: 200 DocumentDetailDTO {kind "pdf", status "prêt", fileName "Maths - Les fractions photo.pdf", note "Texte corrigé par l'élève — PDF généré.", chunks re-counted, textContent updated}; file exists (1417 o); GET …/pdf → 200 application/pdf, content-length 1417, bytes identical (cmp OK), pdftotext shows title/subject-date/accents; 400 empty text, 404 unknown doc, 404 PDF never generated (FR messages); long-doc tests: 303 k chars → 67 pages 1.1 s; 960 k chars → exactly 200 pages + "(tronqué)" 1.8 s.
+   198→- GET /api/documents list shows new kinds (epub/audio/pdf→pdf) + updated notes; /api/stats chunks 235 after re-chunks; unsupported .rtf → new formats message. bun run lint: PASS (0 errors, 0 warnings). dev.log: only 200/400/404 as designed, no compile/runtime errors from task files.
+   199→
+   200→Stage Summary:
+   201→- Ingestion now covers PDF, DOCX, EPUB (regex-parsed OPF/spine), TXT/MD, images (OCR) and 7 audio formats (ffmpeg 7-min 16 kHz mono segments → built-in ASR, per-segment progress + fault tolerance) — extractText(files, buffer, onProgress?) streams progress into the Lecteur agent.
+   202→- Scanned/photo imports land as status "à vérifier" with a proof-read note; the student corrects text → POST /api/documents/[id]/save-pdf re-chunks (same chunkText), stores kind "pdf"/status "prêt"/sanitized fileName/note, writes a clean A4 Helvetica PDF (accents-safe WinAnsi, 200-page cap) to upload/documents/{id}.pdf, invalidates BM25 cache, returns the detail DTO; GET /api/documents/[id]/pdf serves it inline.
+   203→- Files: modified src/lib/ingestion.ts, src/app/api/documents/route.ts; created src/lib/doc-dto.ts, src/app/api/documents/[id]/save-pdf/route.ts, src/app/api/documents/[id]/pdf/route.ts.
+   204→- Deviations: (1) ExtractResult.note doesn't exist — shape is {text, pages, method}, so the EPUB count lives in method → route note "Extraction : EPUB — N chapitres extraits" (spec's "adapt to the actual shape"); (2) audio upload limit raised to 80 Mo at the route guard for audio kinds only (otherwise the 80 MB extractText guard was unreachable behind the 25 MB check); (3) entity decoding extended beyond the listed set with ~40 common French/Latin-1 named entities (strict superset, same single-pass decode, &amp; last); (4) pdf line wrap uses font.widthOfTextAtSize (≈95 chars/line at 11 pt) instead of a hard 95-char cut so lines never overflow the margin; short-OCR hint threshold is text.trim().length < 40.
+   205→
+   206→---
+   207→Task ID: 2-d
+   208→Agent: full-stack-developer (recovered by main — agent hit context deadline after implementation, before verification/worklog)
+   209→Task: Frontend — audio reader UX (auto-select, preparation state), new import formats UI, scanned-doc correction dialog + save-as-PDF flow
+   210→
+   211→Work Log:
+   212→- revision-section.tsx: auto-select most recent doc on mount when none selected (line ~430), "Préparation du document pour la lecture…" loading state (line ~990), error Alert + Réessayer in audio card, empty-text hint.
+   213→- documents-section.tsx: accept = pdf,docx,txt,md,epub,png,jpg,jpeg,webp,mp3,wav,m4a,ogg,webm,aac,flac; format hint "PDF, DOCX, TXT, EPUB, MP3/WAV (transcrit), PNG/JPG (OCR) — 80 Mo max"; kind badges (EPUB=BookOpen, Audio=AudioLines amber, Image, PDF); status "à vérifier" amber PenLine badge (clickable → review dialog); post-ingest auto-open of ReviewDialog when doc.status === "à vérifier"; menu actions "Corriger le texte (OCR)" + "Ouvrir le PDF" (blob fetch + object URL, French error toast if 404).
+   214→- review-dialog.tsx created: editable textarea pre-filled with OCR textContent (fetched via fetchDocumentDetail), amber OCR explanation alert, [Enregistrer en PDF] (savePdf → toast → onDocumentsChanged + onImported(updatedDoc) → Révision greet), [Enregistrer sans PDF] (updateDocument), [Plus tard].
+   215→- api-client.ts: savePdf(id, text) + fetchDocumentPdf(id) → Blob appended.
+   216→- Main agent verified all pieces present + lint PASS after timeout.
+   217→
+   218→Stage Summary:
+   219→- All frontend deliverables landed; E2E done by main (Task 4 below).
+   220→
+   221→---
+   222→Task ID: 4
+   223→Agent: main (Z.ai Code)
+   224→Task: Audio repair (legacy docs), E2E verification of new formats + scanned flow, mobile fix, cleanup
+   225→
+   226→Work Log:
+   227→- AUDIO BUG ROOT CAUSE: 3 legacy PDFs (pre-textContent column) had textContent="" → play button disabled (disabled={detail.textContent.trim().length===0}). FIX: auto-heal in GET /api/documents/[id] — rebuilds textContent from ordered chunks on first open and persists it. Verified: Doctrines Bibliques 0 → 85 159 chars; play → "Segment 1 / 666", POST /api/tts 200 (487 KB wav); button ACTIVÉ on desktop + auto-select most recent doc.
+   228→- EPUB E2E (UI): "Les Volcans (EPUB)" uploaded → "Extraction : EPUB — 2 chapitres extraits" → auto-redirect Révision + greet. EPUB badge in list.
+   229→- AUDIO E2E: TTS-generated French speech mp3 uploaded → ASR transcription "segment 1/1 — texte extrait", doc kind audio, 268 chars, révisable/TTS-able like any course.
+   230→- SCANNED FLOW E2E (UI): PNG (mitose, sharp-rendered text) → VLM OCR → status "à vérifier" → ReviewDialog auto-opens → corrected text → "Enregistrer en PDF" → doc kind pdf/status prêt/fileName "La Mitose scan.pdf"/note "Texte corrigé par l'élève — PDF généré", chunks re-indexed BEFORE response, upload/documents/{id}.pdf (1210 B, PDF 1.7) served via GET /pdf HTTP 200 → auto-redirect Révision with greet. Agents "pris connaissance" avant la fin de sauvegarde ✓.
+   231→- "Ouvrir le PDF": menu item present for kind pdf; underlying fetch verified HTTP 200 application/pdf (Radix menu closes between evals — tooling limitation, code path + API verified).
+   232→- MOBILE FIX: horizontal overflow (scrollW 464) caused by folder-bar header span "— filtré sur « … »" not shrinking → added min-w-0/flex-wrap/truncate. Re-verified scrollW=375.
+   233→- CLEANUP: deleted 7 agent test docs; kept 9 (3 new-format demos + user courses).
+   234→- bun run lint PASS; dev.log clean; console errors 0.
+   235→
+   236→Stage Summary:
+   237→- Audio fixed everywhere incl. legacy docs (auto-heal on course open = "il parcourt le document pour la lecture" as requested).
+   238→- New formats live: EPUB (chapters), audio mp3/wav/m4a/ogg/webm/aac/flac (ffmpeg split → ASR), scanned/handwritten images (OCR → human correction → clean PDF → agents indexed → revision starts).
+   239→- Demos kept: Les Volcans (EPUB), Les Séismes (audio), La Mitose (scan→PDF corrigé), The Water Cycle (EN).
+   240→
