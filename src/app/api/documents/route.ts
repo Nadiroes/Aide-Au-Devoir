@@ -1,21 +1,23 @@
 // Documents API
-// GET  /api/documents        → list imported courses
+// GET  /api/documents        → list imported courses (with folder + Q&A metrics)
 // POST /api/documents        → multipart upload, returns SSE stream of IngestEvent
 //                              (agents Lecteur → Découpeur → Indexeur announce readiness)
 
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { extractText, chunkText, kindFromFileName } from "@/lib/ingestion";
+import { detectLanguage, languageLabel } from "@/lib/language";
 import { invalidateSearchCache } from "@/lib/search";
 import { sseResponse, type SseEmit } from "@/lib/sse-server";
-import type { DocumentDTO, IngestEvent } from "@/lib/types";
+import type { DocLanguage, DocumentDTO, IngestEvent } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_SIZE = 25 * 1024 * 1024; // 25 MB
 
-function toDTO(d: {
+/** Freshly created document (POST path) — no folder, no Q&A yet. */
+function toIngestDTO(d: {
   id: string;
   title: string;
   subject: string;
@@ -25,14 +27,77 @@ function toDTO(d: {
   chunks: number;
   chars: number;
   note: string | null;
+  language: string;
   createdAt: Date;
 }): DocumentDTO {
-  return { ...d, createdAt: d.createdAt.toISOString() };
+  return {
+    id: d.id,
+    title: d.title,
+    subject: d.subject,
+    kind: d.kind,
+    fileName: d.fileName,
+    status: d.status,
+    chunks: d.chunks,
+    chars: d.chars,
+    note: d.note,
+    language: (d.language === "en" ? "en" : "fr") as DocLanguage,
+    folderId: null,
+    folderName: null,
+    folderColor: null,
+    qaCount: 0,
+    qaToReview: 0,
+    mastery: 0,
+    createdAt: d.createdAt.toISOString(),
+  };
 }
 
 export async function GET() {
-  const docs = await db.document.findMany({ orderBy: { createdAt: "desc" } });
-  return Response.json({ documents: docs.map(toDTO) });
+  const [docs, arevoirGroups, connuGroups, ratedGroups] = await Promise.all([
+    db.document.findMany({
+      orderBy: { createdAt: "desc" },
+      include: {
+        folder: { select: { name: true, color: true } },
+        _count: { select: { revisionQAs: true } },
+      },
+    }),
+    db.revisionQA.groupBy({ by: ["documentId"], where: { rating: "arevoir" }, _count: { _all: true } }),
+    db.revisionQA.groupBy({ by: ["documentId"], where: { rating: "connu" }, _count: { _all: true } }),
+    db.revisionQA.groupBy({
+      by: ["documentId"],
+      where: { rating: { not: null } },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const arevoirMap = new Map(arevoirGroups.map((g) => [g.documentId, g._count._all]));
+  const connuMap = new Map(connuGroups.map((g) => [g.documentId, g._count._all]));
+  const ratedMap = new Map(ratedGroups.map((g) => [g.documentId, g._count._all]));
+
+  const documents: DocumentDTO[] = docs.map((d) => {
+    const rated = ratedMap.get(d.id) ?? 0;
+    const connu = connuMap.get(d.id) ?? 0;
+    return {
+      id: d.id,
+      title: d.title,
+      subject: d.subject,
+      kind: d.kind,
+      fileName: d.fileName,
+      status: d.status,
+      chunks: d.chunks,
+      chars: d.chars,
+      note: d.note,
+      language: (d.language === "en" ? "en" : "fr") as DocLanguage,
+      folderId: d.folderId,
+      folderName: d.folder?.name ?? null,
+      folderColor: d.folder?.color ?? null,
+      qaCount: d._count.revisionQAs,
+      qaToReview: arevoirMap.get(d.id) ?? 0,
+      mastery: rated > 0 ? Math.round((connu / rated) * 100) : 0,
+      createdAt: d.createdAt.toISOString(),
+    };
+  });
+
+  return Response.json({ documents });
 }
 
 export async function POST(req: NextRequest) {
@@ -41,6 +106,7 @@ export async function POST(req: NextRequest) {
   const file = form?.get("file");
   const title = String(form?.get("title") ?? "").trim();
   const subject = String(form?.get("subject") ?? "").trim() || "Général";
+  const folderId = String(form?.get("folderId") ?? "").trim() || null;
 
   const invalid = (() => {
     if (!form) return "Requête invalide (formulaire manquant).";
@@ -89,6 +155,14 @@ export async function POST(req: NextRequest) {
           ? `${result.pages} page(s) lue(s) — ${result.method}.`
           : `${result.method} — texte extrait.`,
       } satisfies IngestEvent);
+
+      const language = detectLanguage(text);
+      emit({
+        type: "agent.log",
+        id: "reader",
+        message: `Langue détectée : ${languageLabel(language)}.`,
+      } satisfies IngestEvent);
+
       emit({
         type: "agent.done",
         id: "reader",
@@ -136,6 +210,7 @@ export async function POST(req: NextRequest) {
     } satisfies IngestEvent);
 
     try {
+      const language = detectLanguage(text);
       const doc = await db.document.create({
         data: {
           title,
@@ -146,6 +221,9 @@ export async function POST(req: NextRequest) {
           chunks: chunks.length,
           chars: text.length,
           note: `Extraction : ${method}`,
+          language,
+          textContent: text,
+          folderId,
           chunkList: { create: chunks.map((c) => ({ idx: c.idx, content: c.content })) },
         },
       });
@@ -156,7 +234,7 @@ export async function POST(req: NextRequest) {
         label: "🗂️ Indexeur",
         summary: "Index de recherche à jour",
       } satisfies IngestEvent);
-      emit({ type: "ingest.done", document: toDTO(doc) } satisfies IngestEvent);
+      emit({ type: "ingest.done", document: toIngestDTO(doc) } satisfies IngestEvent);
     } catch (err) {
       fail("indexer", err instanceof Error ? err.message : "Échec de l'indexation");
     }

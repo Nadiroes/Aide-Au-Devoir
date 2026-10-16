@@ -102,3 +102,72 @@ Work Log:
 Stage Summary:
 - App fully verified end-to-end in a real browser: import (TXT + PNG/OCR), multi-agent RAG chat with citations, API key live verification, settings CRUD paths, responsive layout, sticky footer.
 - Test data left intentionally: 2 demo courses (SVT txt + Maths PNG-OCR) so the user can try RAG immediately.
+
+---
+Task ID: 2-a
+Agent: full-stack-developer
+Task: Backend — folders, document editing/re-chunking, revision Q&A + SSE pipeline, TTS/ASR, self-learning memory, stats
+
+Work Log:
+- Read worklog + frozen contract src/lib/types.ts (FolderDTO, DocumentDTO v2, DocumentDetailDTO, RevisionQADTO, AgentMemoryDTO, StatsDTO v2, RevisionEvent, RevisionRequestBody, TtsRequestBody, coach/evaluator/learner agents, TTS_VOICES) and followed existing patterns (db.ts, sse-server.ts, llm.ts, agents.ts, ingestion.ts, search.ts, documents/chat/stats routes).
+- src/lib/language.ts: detectLanguage (accent count ×2 + FR/EN stopword scoring on first 4000 chars, tokenized split to avoid JS \b issues with accented words, ties/empty → "fr") + languageLabel ("Français (FR)" / "Anglais (EN)").
+- src/lib/tts.ts (backend-only SDK): splitTtsText (sentence boundaries [.!?\n…], accumulate ≤900, hard-slice fallback), singleton ZAI.create() promise via getZaiClient() (also reused by /api/asr), autoVoice (fr→tongtong, en→jam), in-memory LRU cache Map keyed voice|speed|sha1(text) with 48 MB byte-budget eviction (oldest-inserted, recency refresh on hit), synthesizeSpeech (clamp speed 0.5–2, strip markdown chars [*#`|_~>], collapse whitespace, ≤900 chars via splitTtsText[0], zai.audio.tts.create({input,voice,speed,response_format:"wav",stream:false}) → arrayBuffer → Buffer, French error "Synthèse vocale indisponible : …").
+- src/lib/memory.ts: buildMemoryContext (top 12 by weight desc/updatedAt desc, scope OR[documentId null, =doc], "- [kind] content (weight w)", "" on any failure), MemoryOp type, applyMemoryOps (add with case-insensitive dedupe→reinforce, reinforce weight+0.5 cap 5 & hits+1, weaken weight−0.3 floor 0.2; per-op + global try/catch so memory never breaks the pipeline), memoryToDTO (with documentTitle).
+- src/lib/revision.ts: runRevision(body, emit) mirroring agents.ts — document validation before revision.start; provider via getProvider(body.provider ?? "zai"); memory profile block ("PROFIL DE L'ÉLÈVE…") + output-language rule injected into every system prompt; actions: greet (no LLM, deterministic French greeting streamed word-by-word /(\s+)/ + 12ms, coach start/done "Cours prêt", NO QA row), question (2 random chunk samples + last 8 QAs as "déjà posées (ne répète PAS)" + avoidIds filter, streamed via message.token, agent.done carries the question), answer (BM25 searchChunks(question) filtered to doc top-2 → courseContext else textContent[:1500]; non-streaming evaluator → robust JSON parse (fences stripped, first {…last }) with fallback verdict "info"/score 50/raw[:500]; emits evaluation → persists RevisionQA (source "coach" if qaId else "user") → qa.saved → agent.done "Verdict — score N/100" → learner agent (existing memories w/ ids in prompt, max-3 ops JSON parsed+sanitized, applyMemoryOps, new rows re-fetched and emitted as memory.saved, summary "N apprentissage(s) enregistré(s)" / "0 apprentissage notable")), ask (streamed coach answer from course passage only, saves QA verdict "info" source "user" → qa.saved). Whole pipeline wrapped: any throw → revision.error (friendly French) + console.error. Exports qaToDTO (reused by /api/qa routes).
+- Routes created: /api/folders (GET sorted by name w/ _count.documents, POST name ≤60 + color #RRGGBB default #059669 → 201, 400 on invalid), /api/folders/[id] (PATCH same validations → FolderDTO, DELETE; schema SetNull detaches docs), /api/qa (GET documentId required, filter all|visible|hidden|arevoir|moyen|connu, sort recent|oldest|verdict(wrong,partly,correct,info)|rating(arevoir,moyen,connu,null) JS-side, limit ≤500, take 1000 then JS sort+slice), /api/qa/[id] (PATCH hidden/rating connu|moyen|arevoir|null/answer/feedback → bare RevisionQADTO, DELETE → {ok:true}), /api/qa/clear (POST shown→hide visible, hidden→delete hidden, all→delete if alsoDelete else hide; returns {count}), /api/tts (TtsRequestBody, guard ≤9000 then slice 900 via synthesizeSpeech, WAV response w/ Content-Type audio/wav + Content-Length + Cache-Control private max-age=86400, 400/500 JSON errors), /api/asr (FormData "audio" File → base64 → zai.audio.asr.create({file_base64}) → {text}, 400 no file/empty, 20 MB guard, multi-shape result extraction), /api/revision (POST → sseResponse + runRevision exactly like /api/chat, GET → 405), /api/memory (GET top 200 w/ document title → {memories}, DELETE ?id= one / no id → deleteMany, returns {ok, deleted}).
+- Routes updated: /api/stats → StatsDTO v2 (documents, folders, chunks, questions=RevisionQA, chatQuestions=ChatMessage, memoryCount, keysConfigured, languages{fr,en} via 2 counts — single Promise.all); /api/documents GET → folder include + _count.revisionQAs + 3 groupBys (arevoir/connu/rated) merged in JS → language, folderId/Name/Color, qaCount, qaToReview, mastery=round(connu/rated×100) or 0; POST → textContent=text, language=detectLanguage(text), agent.log "Langue détectée : Français (FR)" emitted under Lecteur, ingest.done uses new toIngestDTO; /api/documents/[id] → +GET DocumentDetailDTO (per-doc counts incl. rated/connu for mastery) and +PATCH {title?,subject?,folderId?(null-able, existence-checked),language?(fr|en),textContent? — changed text ⇒ chunkText re-chunk in $transaction (deleteMany chunks → update doc w/ chars+chunks → createMany), invalidateSearchCache()} while keeping DELETE.
+- Ops fix: the long-running dev server process predated the prisma client regeneration → globalThis singleton held a client WITHOUT Folder/RevisionQA/AgentMemory (db.folder undefined, 500s). Restarted the dev server (new process picked up the regenerated client). No db:push/migrate run; no types.ts/frontend/sse-client/api-client/globals.css file touched.
+
+Verified with curl (server on :3000):
+- Folders CRUD: GET [] → POST 201 (DTO w/ documentCount) → PATCH rename → GET → DELETE {ok:true}; POST {"name":""} → 400. Folder attach: PATCH doc {folderId} → folderName/folderColor in list & detail; folder DELETE → doc detached (SetNull).
+- Upload /tmp/cours-fractions.txt (758 chars) → SSE ingest.* incl. "Langue détectée : Français (FR)"; ingest.done DTO has language/qaCount/qaToReview/mastery/folder*; GET /api/documents shows qaCount 2 / qaToReview 1 / mastery 0→100 after rating connu.
+- PATCH doc: rename OK; textContent change → re-chunk 1→2 segments, chars 758→1250, chunks invalidated; empty title → 400.
+- POST /api/revision greet → revision.start, agent.start coach, message.token word stream ("Bonjour ! J'ai fini de lire « Maths — Les fractions » (1 segment extrait, 758 caractères, langue Français)… On commence la révision ?"), agent.done "Cours prêt", revision.done (no QA row).
+- POST /api/revision question → coach logs + streamed question "Comment additionner correctement les fractions 3/8 et 5/12 ?" + agent.done(content=question) + revision.done; second run adapted (2/5 et 3/10) with memory present.
+- POST /api/revision answer → agent.start Évaluateur, retrieval logs, evaluation {verdict wrong, score 0, feedback, modelAnswer} → qa.saved → "À revoir — score 0/100" → 🧠 Mémoire: memory.saved weakness "Confond l'addition des fractions…" + "1 apprentissage enregistré" + revision.done. Re-run with correct answer → verdict correct/100, memory.saved strength "L'élève maîtrise l'addition de fractions de même dénominateur". Empty userAnswer → revision.error "Réponse vide"; GET /api/revision → 405; bad body → 400.
+- POST /api/revision ask → streamed coach answer (2 phrases, exact course rule 2/3×3/5=6/15=2/5) + qa.saved (verdict info, source user) + revision.done.
+- /api/qa: list (2 rows), filter=arevoir/hidden, sort=rating (arevoir before null), PATCH rating connu/arevoir + hidden true/false, POST clear mode=hidden → {count:1} (deleted), mode=shown → {count:1} (hidden).
+- /api/memory: GET 1–2 insights w/ documentTitle, DELETE ?id → {ok:true,deleted:1}; DELETE all tested via count return.
+- /api/stats: {"documents":4,"folders":0,"chunks":228,"questions":2,"chatQuestions":9,"memoryCount":1,"keysConfigured":1,"languages":{"fr":4,"en":0}}.
+- /api/tts: 227 856 octets, file(1) = "RIFF … WAVE audio, PCM 16 bit, mono 24000 Hz" (http 200 in 2.0s); 2nd identical call = cache HIT (13 ms, same bytes; [tts] cache HIT logged server-side only); empty text → 400; language "en" (jam) → valid WAV.
+- /api/asr: no file → 400; round-trip POST of the TTS wav → {"text":"Bonjour, Ceci S N test de lecture audio"} (200).
+- eslint on the 20 task files: PASS (0/0). Full `bun run lint`: 1 error + 3 warnings ALL inside the parallel frontend agent's in-progress src/components/memory-card.tsx + revision-section.tsx (frozen zone for task 2-a). tsc --noEmit: zero errors in task files (remaining hits are pre-existing examples/skills/ingestion vision typing + frontend WIP). dev.log: no compile/runtime errors from task files.
+
+Stage Summary:
+- Full revision backend live and contract-exact: 4 SSE actions (greet deterministic, question adaptive w/ avoidIds, answer evaluator→JSON verdict/score/feedback/modelAnswer→RevisionQA persist→learner self-memory, ask course-grounded answer), memory profile injected in all prompts + output-language rule from Document.language.
+- Deliverables: src/lib/{language,tts,memory,revision}.ts + routes folders, folders/[id], qa, qa/[id], qa/clear, tts, asr, revision, memory + updated documents, documents/[id], stats. qaToDTO shared from revision.ts, memoryToDTO from memory.ts (no contract duplication).
+- Deviations: (1) dev server restart required — stale pre-regeneration PrismaClient in the old process; (2) greeting uses bare "Français/Anglais" inside the sentence (spec's "{Français|Anglais}") to avoid "…langue Français (FR))." double-paren artifact; (3) "question" chunk sampling = 2 random distinct chunks (recent-QA→chunk mapping isn't stored, so "prefer unused" degrades to random as the spec allows); (4) /api/qa/... PATCH/POST single-resource endpoints return the bare DTO (spec wording) while list endpoints keep the {items} wrapper of the existing style.
+
+---
+Task ID: 2-b
+Agent: full-stack-developer (recovered by main — agent hit context deadline after implementation, before verification)
+Task: Frontend — Révision tab (Q&A coach + TTS player + ASR mic), folders & document editing, post-import redirect, agent memory card, audio settings
+
+Work Log:
+- Implemented against frozen contract types.ts: revision-section.tsx (1494 lines), memory-card.tsx, hooks/use-tts-player.ts, hooks/use-recorder.ts, api-client.ts extensions, page.tsx/app-header.tsx (TabId + "Révision" nav), documents-section.tsx (folders bar, dropdown actions, language badges), settings-section.tsx (Audio & Voix + getTtsPrefs), assistant-section.tsx (Volume2 read-aloud + MemoryCard), dashboard-section.tsx (StatsDTO v2 cards).
+- Main agent verified completeness via grep/lint after timeout: all contract pieces present, `bun run lint` PASS (0 errors).
+
+Stage Summary:
+- All frontend deliverables landed and lint-clean; E2E verification performed by main (Task 3).
+
+---
+Task ID: 3
+Agent: main (Z.ai Code)
+Task: E2E browser verification of the full revision + audio + folders + memory feature set
+
+Work Log:
+- agent-browser on http://localhost:3000: dashboard 5-tab nav (Accueil/Cours/Révision/Assistant/Paramètres).
+- Cours: created folder "Théologie Biblique" (6-color palette popover, toast), moved "Doctrines Biblique" into it via actions menu (count 0→1, toast), folder chip filter shows "Mes cours (1)" only that doc; doc cards show FR/EN badges, question counts; actions menu = Réviser/Écouter/Renommer/Modifier le texte/Déplacer vers…/Supprimer.
+- Post-import flow: uploaded "La Photosynthèse (SVT)" via UI → toast "importé — 2 segments indexés" → AUTO-redirect to Révision tab with doc preselected + greeting bubble "J'ai lu « La Photosynthèse (SVT) » en entier. On commence la révision ?" [Oui, commence !] [Plus tard]. ✅ user requirement met.
+- Coach SSE: "Oui, commence !" → coach streamed Q1 "Quels sont les trois facteurs limitants de la photosynthèse…?" with agents strip (Coach/Évaluateur/Mémoire) + "Écouter la question du coach" button.
+- Evaluation: submitted a partly-wrong answer → "🟡 Partiel — score 60/100" + precise feedback + "Réponse attendue" collapsible + rating buttons Je sais/Moyen/À revoir. Rated "À revoir 🔁" (toast OK).
+- Clear/show: "Effacer les réponses" → card collapses to "Réponse effacée de l'écran — conservée dans la fiche 👁️" + Afficher button (stored, not deleted); "Tout afficher" restores; sort "À revoir d'abord" works; Exporter .md fires download; mastery shows 0% (À revoir) — correct math.
+- Audio: "Lancer la lecture audio" → "Segment 1 / 10" + current sentence highlighted, server POST /api/tts 200 (892 KB WAV tongtong), Stop resets. Speed/voice selectors present (Voix auto (FR)). Settings "🔊 Audio & Voix" card: voice (Auto FR→Tongtong EN→Jam), speed, autoread switch, "Tester la voix".
+- Adaptive self-learning: next coach question targeted the EXACT confusion mémorisée (photosynthèse vs respiration); correct answer → "✅ Correct"; /api/memory shows 3 insights incl. reinforced weakness (weight 1.5, hits 1); Assistant tab card "🧠 Mémoire de l'assistant (3)" lists kind badges + doc titles + Tout effacer.
+- EN detection: curl upload "The Water Cycle" → "Langue détectée : Anglais (EN)", language "en", EN badge in list, /api/tts language:en → valid WAV (jam).
+- Mobile 375px: nav scroll-x, 2 cards stacked, no h-scroll (scrollW=375), footer reachable. Desktop 1280/1440: 2-col grid.
+- Console errors: 0. Page errors: 0. bun run lint: PASS. dev.log: only clean 200s (tts/qa/folders/documents), no compile errors.
+
+Stage Summary:
+- Feature set verified end-to-end in a real browser: import→auto-revision greeting→adaptive coaching→evaluation→self-assessment→clear/show/sort/export→TTS before/during/after→ASR mic wiring→folders/renaming/editing→EN/FR detection→persistent self-learning memory.
+- Test data left: 6 docs (5 FR + 1 EN), folder "Théologie Biblique", 2 revision QAs on Photosynthèse, 3 memory insights — user can explore immediately.

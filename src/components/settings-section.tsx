@@ -13,6 +13,7 @@ import {
   Save,
   ShieldCheck,
   Trash2,
+  Volume2,
   XCircle,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,6 +22,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,9 +41,193 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { deleteApiKey, fetchProviders, saveApiKey, testApiKey } from "@/lib/api-client";
+import { deleteApiKey, fetchProviders, saveApiKey, testApiKey, ttsToBlob } from "@/lib/api-client";
+import { TTS_VOICES } from "@/lib/types";
 import type { ProviderStatusDTO } from "@/lib/types";
 import { toast } from "sonner";
+
+// ---------- TTS preferences (persisted locally, shared with the revision tab) ----------
+
+export interface TtsPrefs {
+  voice?: string;
+  speed?: number;
+  autoread: boolean;
+}
+
+const LS_VOICE = "ad_tts_voice";
+const LS_SPEED = "ad_tts_speed";
+const LS_AUTOREAD = "ad_tts_autoread";
+
+/** Reads the persisted audio preferences (client-side only). */
+export function getTtsPrefs(): TtsPrefs {
+  if (typeof window === "undefined") return { autoread: false };
+  let voice: string | undefined;
+  let speed: number | undefined;
+  let autoread = false;
+  try {
+    const v = window.localStorage.getItem(LS_VOICE);
+    if (v && v !== "auto") voice = v;
+    const s = window.localStorage.getItem(LS_SPEED);
+    if (s) {
+      const n = Number(s);
+      if (Number.isFinite(n) && n > 0) speed = n;
+    }
+    autoread = window.localStorage.getItem(LS_AUTOREAD) === "1";
+  } catch {
+    // localStorage unavailable (private mode) — use defaults.
+  }
+  return { voice, speed, autoread };
+}
+
+const TTS_SPEED_OPTIONS = ["0.75", "1", "1.25", "1.5"];
+
+function AudioSettingsCard() {
+  const [voice, setVoice] = useState("auto");
+  const [speed, setSpeed] = useState("1");
+  const [autoread, setAutoread] = useState(false);
+  const [testing, setTesting] = useState(false);
+
+  useEffect(() => {
+    const prefs = getTtsPrefs();
+    setVoice(prefs.voice ?? "auto");
+    setSpeed(prefs.speed ? String(prefs.speed) : "1");
+    setAutoread(prefs.autoread);
+  }, []);
+
+  const applyVoice = (value: string) => {
+    setVoice(value);
+    try {
+      window.localStorage.setItem(LS_VOICE, value);
+    } catch {
+      // ignore
+    }
+  };
+
+  const applySpeed = (value: string) => {
+    setSpeed(value);
+    try {
+      window.localStorage.setItem(LS_SPEED, value);
+    } catch {
+      // ignore
+    }
+  };
+
+  const applyAutoread = (value: boolean) => {
+    setAutoread(value);
+    try {
+      window.localStorage.setItem(LS_AUTOREAD, value ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  };
+
+  const runTest = async () => {
+    if (testing) return;
+    setTesting(true);
+    let url: string | null = null;
+    try {
+      const blob = await ttsToBlob({
+        text: "Bonjour ! Voici la voix choisie pour tes révisions. Bon courage !",
+        voice: voice === "auto" ? undefined : voice,
+        speed: Number(speed),
+      });
+      url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => {
+        if (url) URL.revokeObjectURL(url);
+      };
+      await audio.play();
+      toast.success("Lecture de l'échantillon voix");
+    } catch (err) {
+      if (url) URL.revokeObjectURL(url);
+      toast.error(err instanceof Error ? err.message : "Synthèse vocale indisponible");
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">🔊 Audio &amp; Voix</CardTitle>
+        <CardDescription>
+          Choisis la voix et la vitesse de lecture des cours et des questions du coach.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="tts-voice">Voix</Label>
+            <Select value={voice} onValueChange={applyVoice}>
+              <SelectTrigger id="tts-voice" className="h-11 w-full" aria-label="Choisir la voix de synthèse">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Automatique (selon la langue)</SelectItem>
+                {TTS_VOICES.map((v) => (
+                  <SelectItem key={v.id} value={v.id}>
+                    {v.label} — {v.description}
+                    {v.bestFor !== "both" ? ` (${v.bestFor.toUpperCase()})` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {voice === "auto"
+                ? "FR → Tongtong · EN → Jam"
+                : TTS_VOICES.find((v) => v.id === voice)?.bestFor === "en"
+                  ? "Particulièrement adaptée à l'anglais"
+                  : TTS_VOICES.find((v) => v.id === voice)?.bestFor === "fr"
+                    ? "Particulièrement adaptée au français"
+                    : "Adaptée à toutes les langues"}
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="tts-speed">Vitesse de lecture</Label>
+            <Select value={speed} onValueChange={applySpeed}>
+              <SelectTrigger id="tts-speed" className="h-11 w-full" aria-label="Choisir la vitesse de lecture">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TTS_SPEED_OPTIONS.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}×
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+          <div className="min-w-0">
+            <Label htmlFor="tts-autoread" className="text-sm">
+              Lire automatiquement les questions du coach
+            </Label>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Chaque nouvelle question sera lue à voix haute pendant la révision.
+            </p>
+          </div>
+          <Switch
+            id="tts-autoread"
+            checked={autoread}
+            onCheckedChange={applyAutoread}
+            aria-label="Lire automatiquement les questions du coach"
+          />
+        </div>
+
+        <Button variant="outline" className="h-11 gap-2" onClick={() => void runTest()} disabled={testing}>
+          {testing ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <Volume2 className="size-4" aria-hidden="true" />
+          )}
+          {testing ? "Test en cours…" : "Tester la voix"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
 
 const SECURITY_POINTS = [
   "Chiffrement AES-256-GCM côté serveur — la clé n'est jamais stockée en clair.",
@@ -329,6 +522,8 @@ export function SettingsSection() {
       ) : (
         providers.map((p) => <ProviderCard key={p.id} provider={p} onChanged={() => void loadProviders()} />)
       )}
+
+      <AudioSettingsCard />
 
       <Card>
         <CardHeader className="pb-2">

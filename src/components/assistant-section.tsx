@@ -7,6 +7,7 @@ import {
   Loader2,
   Send,
   Square,
+  Volume2,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,8 +29,9 @@ import {
 } from "@/components/ui/select";
 import { AgentStatusList, type AgentDisplay } from "@/components/agent-status";
 import { MarkdownView } from "@/components/markdown-view";
+import { MemoryCard } from "@/components/memory-card";
 import { isAbortError, postSse } from "@/lib/sse-client";
-import { fetchChatHistory, fetchProviders } from "@/lib/api-client";
+import { fetchChatHistory, fetchProviders, ttsToBlob } from "@/lib/api-client";
 import { CHAT_AGENT_ORDER } from "@/lib/types";
 import type { ChatEvent, ChatMessageDTO, ChatMode, ProviderId, RetrievalHit } from "@/lib/types";
 import { toast } from "sonner";
@@ -106,7 +108,7 @@ function HistoryItem({ msg }: { msg: ChatMessageDTO }) {
   );
 }
 
-export function AssistantSection() {
+export function AssistantSection({ memoryVersion = 0 }: { memoryVersion?: number }) {
   const [question, setQuestion] = useState("");
   const [mode, setMode] = useState<ChatMode>("cours");
   const [provider, setProvider] = useState<ProviderId>("zai");
@@ -121,8 +123,47 @@ export function AssistantSection() {
   const [history, setHistory] = useState<ChatMessageDTO[]>([]);
   const [historyOpen, setHistoryOpen] = useState(true);
 
+  const [loadingAudio, setLoadingAudio] = useState(false);
+
   const abortRef = useRef<AbortController | null>(null);
   const answerRef = useRef<HTMLDivElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
+
+  // Listen to the (latest) streamed answer — TTS, French.
+  const listenToAnswer = useCallback(async () => {
+    const text = stripMarkdown(answer);
+    if (loadingAudio || text.length === 0) return;
+    setLoadingAudio(true);
+    let url: string | null = null;
+    try {
+      const blob = await ttsToBlob({ text: text.slice(0, 4000), language: "fr" });
+      url = URL.createObjectURL(blob);
+      audioUrlRef.current = url;
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => {
+        if (audioUrlRef.current) {
+          URL.revokeObjectURL(audioUrlRef.current);
+          audioUrlRef.current = null;
+        }
+      };
+      await audio.play();
+    } catch (err) {
+      if (url) URL.revokeObjectURL(url);
+      if (audioUrlRef.current === url) audioUrlRef.current = null;
+      toast.error(err instanceof Error ? err.message : "Synthèse vocale indisponible");
+    } finally {
+      setLoadingAudio(false);
+    }
+  }, [answer, loadingAudio]);
+
+  useEffect(() => {
+    return () => {
+      audioRef.current?.pause();
+      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+    };
+  }, []);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -355,7 +396,24 @@ export function AssistantSection() {
             >
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Réponse</CardTitle>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <CardTitle className="text-base">Réponse</CardTitle>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 gap-1.5 text-xs"
+                      onClick={() => void listenToAnswer()}
+                      disabled={loadingAudio || answer.trim().length === 0}
+                      aria-label="Écouter la réponse"
+                    >
+                      {loadingAudio ? (
+                        <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Volume2 className="size-3.5" aria-hidden="true" />
+                      )}
+                      Écouter la réponse
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div ref={answerRef} className="scroll-thin max-h-[480px] overflow-y-auto pr-1">
@@ -428,6 +486,8 @@ export function AssistantSection() {
             <h2 className="mb-3 text-lg font-semibold">Agents</h2>
             <AgentStatusList agents={agents} />
           </div>
+
+          <MemoryCard version={memoryVersion} />
 
           {hits.length > 0 && (
             <Card className="gap-0 py-0">

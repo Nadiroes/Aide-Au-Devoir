@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import {
   BookOpen,
+  BookOpenCheck,
+  Brain,
+  Folder,
   KeyRound,
   Layers,
   MessageSquare,
@@ -12,6 +15,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import { fetchChatHistory, fetchStats } from "@/lib/api-client";
 import type { ChatMessageDTO, StatsDTO } from "@/lib/types";
 import type { TabId } from "@/components/app-header";
@@ -22,12 +26,12 @@ const STEPS = [
     text: "PDF, DOCX, images OCR — glissez vos documents, ils sont extraits automatiquement.",
   },
   {
-    title: "2. Les agents lisent et indexent",
-    text: "Lecteur, Découpeur et Indexeur préparent vos cours pour une recherche précise.",
+    title: "2. Le coach interroge",
+    text: "La révision guidée pose des questions, évalue tes réponses et s'adapte à toi.",
   },
   {
-    title: "3. Posez vos questions",
-    text: "Des réponses qui citent vos cours, plus une fiche élève pour réviser.",
+    title: "3. Écoute et révise",
+    text: "Fais lire tes cours à voix haute, garde une fiche de révision à jour.",
   },
 ];
 
@@ -103,24 +107,55 @@ export function DashboardSection({
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard icon={BookOpen} label="Cours importés" value={stats?.documents ?? null} loading={loading} />
-        <StatCard icon={Layers} label="Segments indexés" value={stats?.chunks ?? null} loading={loading} />
-        <StatCard icon={MessageSquare} label="Questions posées" value={stats?.questions ?? null} loading={loading} />
-        <StatCard icon={KeyRound} label="Clés configurées" value={stats?.keysConfigured ?? null} loading={loading} />
+        <StatCard icon={BookOpen} label="Cours" value={stats?.documents ?? null} loading={loading} />
+        <StatCard icon={Folder} label="Dossiers" value={stats?.folders ?? null} loading={loading} />
+        <StatCard
+          icon={MessageSquare}
+          label="Questions révisées"
+          value={stats?.questions ?? null}
+          loading={loading}
+        />
+        <StatCard icon={Brain} label="Mémoire" value={stats?.memoryCount ?? null} loading={loading} />
       </div>
 
+      {/* Secondary stats strip */}
+      {!loading && stats && (
+        <div className="flex flex-wrap items-center gap-2" aria-label="Statistiques détaillées">
+          <Badge variant="outline" className="gap-1.5 px-2.5 py-1 text-xs font-normal">
+            <Layers className="size-3.5" aria-hidden="true" />
+            {stats.chunks ?? 0} segments indexés
+          </Badge>
+          <Badge variant="outline" className="gap-1.5 px-2.5 py-1 text-xs font-normal">
+            <KeyRound className="size-3.5" aria-hidden="true" />
+            {stats.keysConfigured ?? 0} clé(s) configurée(s)
+          </Badge>
+          <Badge variant="outline" className="gap-1.5 px-2.5 py-1 text-xs font-normal">
+            FR {stats.languages?.fr ?? 0} · EN {stats.languages?.en ?? 0}
+          </Badge>
+        </div>
+      )}
+
       {/* Quick actions */}
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Button
+          onClick={() => onNavigate("revision")}
+          className="h-11 bg-emerald-600 text-white hover:bg-emerald-700"
+        >
+          <BookOpenCheck className="size-4" aria-hidden="true" />
+          Réviser
+        </Button>
         <Button
           onClick={() => onNavigate("cours")}
-          className="h-11 bg-emerald-600 text-white hover:bg-emerald-700"
+          variant="outline"
+          className="h-11"
         >
           <Upload className="size-4" aria-hidden="true" />
           Importer un cours
         </Button>
         <Button
           onClick={() => onNavigate("assistant")}
-          className="h-11 bg-emerald-600 text-white hover:bg-emerald-700"
+          variant="outline"
+          className="h-11"
         >
           <Send className="size-4" aria-hidden="true" />
           Poser une question

@@ -139,3 +139,27 @@
   background-color: var(--border);
   border-radius: 9999px;
 }
+
+/* Animated equalizer bars (audio reader while playing) */
+.eq-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+}
+.eq-bar {
+  width: 3px;
+  height: 40%;
+  border-radius: 9999px;
+  background-color: #10b981;
+  animation: eq-bounce 0.9s ease-in-out infinite;
+}
+@keyframes eq-bounce {
+  0%,
+  100% {
+    height: 30%;
+  }
+  50% {
+    height: 100%;
+  }
+}
