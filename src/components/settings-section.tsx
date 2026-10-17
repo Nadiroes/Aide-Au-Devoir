@@ -42,8 +42,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { deleteApiKey, fetchProviders, saveApiKey, testApiKey, ttsToBlob } from "@/lib/api-client";
-import { TTS_VOICES } from "@/lib/types";
-import type { ProviderStatusDTO } from "@/lib/types";
+import { TTS_SAMPLE_TEXT, TTS_VOICES } from "@/lib/types";
+import type { ProviderStatusDTO, TtsEngine } from "@/lib/types";
 import { toast } from "sonner";
 
 // ---------- TTS preferences (persisted locally, shared with the revision tab) ----------
@@ -52,18 +52,21 @@ export interface TtsPrefs {
   voice?: string;
   speed?: number;
   autoread: boolean;
+  engine: TtsEngine; // "auto" (default) | "system" | "serveur"
 }
 
 const LS_VOICE = "ad_tts_voice";
 const LS_SPEED = "ad_tts_speed";
 const LS_AUTOREAD = "ad_tts_autoread";
+const LS_ENGINE = "ad_tts_engine";
 
 /** Reads the persisted audio preferences (client-side only). */
 export function getTtsPrefs(): TtsPrefs {
-  if (typeof window === "undefined") return { autoread: false };
+  if (typeof window === "undefined") return { autoread: false, engine: "auto" };
   let voice: string | undefined;
   let speed: number | undefined;
   let autoread = false;
+  let engine: TtsEngine = "auto";
   try {
     const v = window.localStorage.getItem(LS_VOICE);
     if (v && v !== "auto") voice = v;
@@ -73,26 +76,85 @@ export function getTtsPrefs(): TtsPrefs {
       if (Number.isFinite(n) && n > 0) speed = n;
     }
     autoread = window.localStorage.getItem(LS_AUTOREAD) === "1";
+    const e = window.localStorage.getItem(LS_ENGINE);
+    if (e === "system" || e === "serveur") engine = e;
   } catch {
     // localStorage unavailable (private mode) — use defaults.
   }
-  return { voice, speed, autoread };
+  return { voice, speed, autoread, engine };
+}
+
+/** Reads the current system (browser/OS) voice label for a language, if any. */
+export function getSystemVoiceLabel(lang: "fr" | "en"): string | null {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return null;
+  const matching = window.speechSynthesis
+    .getVoices()
+    .filter((v) => (v.lang ?? "").toLowerCase().startsWith(lang));
+  if (!matching.length) return null;
+  const preferred =
+    matching.find((v) => /google/i.test(v.name)) ??
+    matching.find((v) => /natural|neural|premium/i.test(v.name)) ??
+    matching.find((v) => v.localService) ??
+    matching[0];
+  return preferred.name;
+}
+
+/** Speaks a sample with the system engine (native accent). Returns false when unavailable. */
+export function speakWithSystemVoice(text: string, speed = 1): boolean {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return false;
+  const voiceName = getSystemVoiceLabel("fr");
+  if (!voiceName) return false;
+  const voice = window.speechSynthesis.getVoices().find((v) => v.name === voiceName);
+  const utter = new SpeechSynthesisUtterance(text);
+  if (voice) {
+    utter.voice = voice;
+    utter.lang = voice.lang;
+  } else {
+    utter.lang = "fr-FR";
+  }
+  utter.rate = Math.min(2, Math.max(0.5, speed));
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utter);
+  return true;
 }
 
 const TTS_SPEED_OPTIONS = ["0.75", "1", "1.25", "1.5"];
 
 function AudioSettingsCard() {
+  const [engine, setEngine] = useState<TtsEngine>("auto");
   const [voice, setVoice] = useState("auto");
   const [speed, setSpeed] = useState("1");
   const [autoread, setAutoread] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [systemVoice, setSystemVoice] = useState<string | null>(null);
 
   useEffect(() => {
     const prefs = getTtsPrefs();
+    setEngine(prefs.engine);
     setVoice(prefs.voice ?? "auto");
     setSpeed(prefs.speed ? String(prefs.speed) : "1");
     setAutoread(prefs.autoread);
+    // Voices may load asynchronously on Chrome.
+    const refresh = () => setSystemVoice(getSystemVoiceLabel("fr"));
+    refresh();
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.addEventListener?.("voiceschanged", refresh);
+      const t = window.setTimeout(refresh, 800);
+      return () => {
+        window.speechSynthesis.removeEventListener?.("voiceschanged", refresh);
+        window.clearTimeout(t);
+      };
+    }
   }, []);
+
+  const applyEngine = (value: TtsEngine) => {
+    setEngine(value);
+    try {
+      window.localStorage.setItem(LS_ENGINE, value);
+    } catch {
+      // ignore
+    }
+  };
 
   const applyVoice = (value: string) => {
     setVoice(value);
@@ -127,7 +189,7 @@ function AudioSettingsCard() {
     let url: string | null = null;
     try {
       const blob = await ttsToBlob({
-        text: "Bonjour ! Voici la voix choisie pour tes révisions. Bon courage !",
+        text: TTS_SAMPLE_TEXT,
         voice: voice === "auto" ? undefined : voice,
         speed: Number(speed),
       });
@@ -137,13 +199,19 @@ function AudioSettingsCard() {
         if (url) URL.revokeObjectURL(url);
       };
       await audio.play();
-      toast.success("Lecture de l'échantillon voix");
+      toast.success("Échantillon de la voix serveur");
     } catch (err) {
       if (url) URL.revokeObjectURL(url);
       toast.error(err instanceof Error ? err.message : "Synthèse vocale indisponible");
     } finally {
       setTesting(false);
     }
+  };
+
+  const runSystemTest = () => {
+    const ok = speakWithSystemVoice(TTS_SAMPLE_TEXT, Number(speed));
+    if (ok) toast.success("Échantillon de la voix système (accent natif)");
+    else toast.error("Aucune voix française trouvée sur cet appareil");
   };
 
   return (
@@ -155,9 +223,34 @@ function AudioSettingsCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="tts-engine">Moteur de lecture</Label>
+          <Select value={engine} onValueChange={(v) => applyEngine(v as TtsEngine)}>
+            <SelectTrigger id="tts-engine" className="h-11 w-full" aria-label="Choisir le moteur de lecture">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">
+                Automatique {systemVoice ? "→ voix système (recommandé)" : "→ voix serveur"}
+              </SelectItem>
+              <SelectItem value="system">
+                Voix système du navigateur — accent français natif
+              </SelectItem>
+              <SelectItem value="serveur">Voix serveur Z.ai — accent anglophone</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {systemVoice
+              ? `Voix système détectée : ${systemVoice} — prononciation française authentique.`
+              : "Aucune voix française détectée sur cet appareil — la voix serveur sera utilisée."}{" "}
+            Les voix serveur Z.ai ont un accent anglophone : pour lire du français, préférez la
+            voix système.
+          </p>
+        </div>
+
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="tts-voice">Voix</Label>
+            <Label htmlFor="tts-voice">Voix serveur</Label>
             <Select value={voice} onValueChange={applyVoice}>
               <SelectTrigger id="tts-voice" className="h-11 w-full" aria-label="Choisir la voix de synthèse">
                 <SelectValue />
@@ -174,11 +267,11 @@ function AudioSettingsCard() {
             </Select>
             <p className="text-xs text-muted-foreground">
               {voice === "auto"
-                ? "FR → Tongtong · EN → Jam"
+                ? "FR → Chuichui · EN → Jam"
                 : TTS_VOICES.find((v) => v.id === voice)?.bestFor === "en"
                   ? "Particulièrement adaptée à l'anglais"
                   : TTS_VOICES.find((v) => v.id === voice)?.bestFor === "fr"
-                    ? "Particulièrement adaptée au français"
+                    ? "La plus intelligible en français (voix serveur)"
                     : "Adaptée à toutes les langues"}
             </p>
           </div>
@@ -216,14 +309,25 @@ function AudioSettingsCard() {
           />
         </div>
 
-        <Button variant="outline" className="h-11 gap-2" onClick={() => void runTest()} disabled={testing}>
-          {testing ? (
-            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-          ) : (
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            variant="outline"
+            className="h-11 flex-1 gap-2"
+            onClick={runSystemTest}
+            disabled={!systemVoice}
+          >
             <Volume2 className="size-4" aria-hidden="true" />
-          )}
-          {testing ? "Test en cours…" : "Tester la voix"}
-        </Button>
+            Tester la voix système
+          </Button>
+          <Button variant="outline" className="h-11 flex-1 gap-2" onClick={() => void runTest()} disabled={testing}>
+            {testing ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Volume2 className="size-4" aria-hidden="true" />
+            )}
+            {testing ? "Test en cours…" : "Tester la voix serveur"}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
@@ -238,29 +342,42 @@ const SECURITY_POINTS = [
 
 function ProviderCard({
   provider,
+  agnesConfig,
   onChanged,
 }: {
   provider: ProviderStatusDTO;
+  agnesConfig?: { baseUrl: string; model: string; authStyle: string };
   onChanged: () => void;
 }) {
   const isZai = provider.id === "zai";
+  const isAgnes = provider.id === "agnes";
   const [key, setKey] = useState("");
   const [show, setShow] = useState(false);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  // Agnes server configuration (URL/model/auth style) — saved before test/save.
+  const [agnesUrl, setAgnesUrl] = useState(agnesConfig?.baseUrl ?? "");
+  const [agnesModel, setAgnesModel] = useState(agnesConfig?.model ?? "agnes-chat");
+  const [agnesStyle, setAgnesStyle] = useState(agnesConfig?.authStyle ?? "bearer");
+
+  const agnesPayload =
+    isAgnes && agnesUrl.trim()
+      ? { baseUrl: agnesUrl.trim(), model: agnesModel.trim() || "agnes-chat", authStyle: agnesStyle }
+      : undefined;
 
   const busy = testing || saving;
-  const serverBlocked = provider.serverReady === false;
-  const disabled = busy || serverBlocked || key.trim().length === 0;
+  const serverBlocked = provider.serverReady === false && !isAgnes;
+  const agnesBlocked = isAgnes && !agnesUrl.trim();
+  const disabled = busy || serverBlocked || agnesBlocked || key.trim().length === 0;
 
   const runTest = async () => {
     if (disabled) return;
     setTesting(true);
     setResult(null);
     try {
-      const res = await testApiKey(provider.id, key.trim());
+      const res = await testApiKey(provider.id, key.trim(), agnesPayload);
       setResult({ ok: res.ok, message: res.message });
       if (res.ok) toast.success(res.message);
       else toast.error(res.message);
@@ -278,7 +395,7 @@ function ProviderCard({
     setSaving(true);
     setResult(null);
     try {
-      const res = await saveApiKey(provider.id, key.trim());
+      const res = await saveApiKey(provider.id, key.trim(), agnesPayload);
       setResult({ ok: res.ok, message: res.message });
       if (res.ok) {
         toast.success(res.message);
@@ -330,6 +447,55 @@ function ProviderCard({
         <CardDescription>{provider.description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {isAgnes && (
+          <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
+            <p className="text-sm font-medium">🖥️ Serveur Agnes</p>
+            <div className="space-y-1.5">
+              <Label htmlFor={`agnes-url-${provider.id}`}>URL du serveur (base OpenAI-compatible)</Label>
+              <Input
+                id={`agnes-url-${provider.id}`}
+                value={agnesUrl}
+                onChange={(e) => setAgnesUrl(e.target.value)}
+                placeholder="https://mon-serveur-agnes.example.com/v1"
+                className="h-11 font-mono text-xs"
+                autoComplete="url"
+                spellCheck={false}
+              />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor={`agnes-model-${provider.id}`}>Modèle</Label>
+                <Input
+                  id={`agnes-model-${provider.id}`}
+                  value={agnesModel}
+                  onChange={(e) => setAgnesModel(e.target.value)}
+                  placeholder="agnes-chat"
+                  className="h-11 font-mono text-xs"
+                  spellCheck={false}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Style d&apos;authentification</Label>
+                <Select value={agnesStyle} onValueChange={setAgnesStyle}>
+                  <SelectTrigger className="h-11" aria-label="Style d'authentification Agnes">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="bearer">Bearer (Authorization: Bearer …)</SelectItem>
+                    <SelectItem value="x-api-key">En-tête x-api-key</SelectItem>
+                    <SelectItem value="query">Clé dans l&apos;URL (?api_key=…)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {!agnesUrl.trim() && (
+              <p className="text-xs text-amber-700">
+                Renseignez l&apos;URL du serveur pour pouvoir tester et enregistrer la clé.
+              </p>
+            )}
+          </div>
+        )}
+
         {serverBlocked && (
           <Alert className="border-amber-200 bg-amber-50 text-amber-900">
             <AlertTriangle className="size-4 text-amber-600" />
@@ -487,11 +653,18 @@ function ProviderCard({
 
 export function SettingsSection() {
   const [providers, setProviders] = useState<ProviderStatusDTO[]>([]);
+  const [agnesConfig, setAgnesConfig] = useState<{
+    baseUrl: string;
+    model: string;
+    authStyle: string;
+  }>({ baseUrl: "", model: "agnes-chat", authStyle: "bearer" });
   const [loading, setLoading] = useState(true);
 
   const loadProviders = useCallback(async () => {
     try {
-      setProviders(await fetchProviders());
+      const data = await fetchProviders();
+      setProviders(data.providers);
+      if (data.agnesConfig) setAgnesConfig(data.agnesConfig);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Impossible de charger les fournisseurs");
     } finally {
@@ -520,7 +693,14 @@ export function SettingsSection() {
           </CardContent>
         </Card>
       ) : (
-        providers.map((p) => <ProviderCard key={p.id} provider={p} onChanged={() => void loadProviders()} />)
+        providers.map((p) => (
+          <ProviderCard
+            key={p.id}
+            provider={p}
+            agnesConfig={p.id === "agnes" ? agnesConfig : undefined}
+            onChanged={() => void loadProviders()}
+          />
+        ))
       )}
 
       <AudioSettingsCard />

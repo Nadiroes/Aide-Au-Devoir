@@ -1,20 +1,35 @@
 // POST /api/keys/save — verify then encrypt + store an API key (upsert).
+// For Agnes, an optional agnesConfig (server URL/model/auth style) is saved
+// first so the verification targets the configured server.
 
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { getProvider } from "@/lib/llm";
+import { getProvider, saveAgnesConfig, type AgnesConfig } from "@/lib/llm";
 import { secretbox } from "@/lib/secretbox";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-  const body = (await req.json().catch(() => null)) as { provider?: string; key?: string } | null;
+  const body = (await req.json().catch(() => null)) as
+    | { provider?: string; key?: string; agnesConfig?: Partial<AgnesConfig> }
+    | null;
   const provider = body?.provider?.trim();
   const key = body?.key?.trim();
 
   if (!provider || !key) {
     return Response.json({ ok: false, message: "Fournisseur et clé requis." }, { status: 400 });
+  }
+
+  if (provider === "agnes" && body?.agnesConfig) {
+    try {
+      await saveAgnesConfig(body.agnesConfig);
+    } catch {
+      return Response.json(
+        { ok: false, message: "Impossible d'enregistrer la configuration du serveur Agnes." },
+        { status: 500 }
+      );
+    }
   }
 
   let label = provider;

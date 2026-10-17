@@ -7,6 +7,7 @@ import { AppFooter } from "@/components/app-footer";
 import { DashboardSection } from "@/components/dashboard-section";
 import { DocumentsSection } from "@/components/documents-section";
 import { RevisionSection } from "@/components/revision-section";
+import { ExamsSection } from "@/components/exams-section";
 import { AssistantSection } from "@/components/assistant-section";
 import { SettingsSection } from "@/components/settings-section";
 import { fetchDocuments } from "@/lib/api-client";
@@ -75,6 +76,12 @@ export default function Page() {
             onGreetConsumed={() => setGreetDocumentId(null)}
             onOpenCourses={() => setTab("cours")}
             onMemoryChanged={() => setMemoryVersion((v) => v + 1)}
+          />
+        )}
+        {tab === "examens" && (
+          <ExamsSection
+            documents={documents}
+            onOpenCourses={() => setTab("cours")}
           />
         )}
         {tab === "assistant" && <AssistantSection memoryVersion={memoryVersion} />}

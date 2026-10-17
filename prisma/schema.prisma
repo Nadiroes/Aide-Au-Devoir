@@ -138,13 +138,21 @@ model ApiKey {
 }
 
 model ChatMessage {
-  id        String   @id @default(cuid())
-  question  String
-  answer    String
-  tutor     String?
-  plan      String?
-  provider  String
-  mode      String   @default("cours") // cours | libre
-  sources   String? // JSON: RetrievalHit[]
-  createdAt DateTime @default(now())
+  id         String   @id @default(cuid())
+  question   String
+  answer     String
+  tutor      String?
+  plan       String?
+  provider   String
+  mode       String   @default("cours") // cours | libre
+  category   String   @default("Général") // rubric for the "Réponses" view
+  sources    String? // JSON: RetrievalHit[]
+  qcmSources String? // JSON: QcmHit[] — matching stored QCM answers
+  createdAt  DateTime @default(now())
+}
+
+model AppSetting {
+  key       String   @id
+  value     String // JSON payload
+  updatedAt DateTime @updatedAt
 }

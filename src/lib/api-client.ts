@@ -7,6 +7,9 @@ import type {
   DocumentDetailDTO,
   DocumentDTO,
   DocLanguage,
+  ExamDTO,
+  ExamDetailDTO,
+  ExamQuestionDTO,
   FolderDTO,
   ProviderId,
   ProviderStatusDTO,
@@ -56,9 +59,11 @@ export async function deleteDocument(id: string): Promise<void> {
 
 // ---------- Keys ----------
 
-export async function fetchProviders(): Promise<ProviderStatusDTO[]> {
-  const data = await getJson<{ providers: ProviderStatusDTO[] }>("/api/keys");
-  return data.providers;
+export async function fetchProviders(): Promise<{
+  providers: ProviderStatusDTO[];
+  agnesConfig: { baseUrl: string; model: string; authStyle: string };
+}> {
+  return getJson("/api/keys");
 }
 
 export interface KeyActionResult {
@@ -68,11 +73,16 @@ export interface KeyActionResult {
   verifiedAt?: string;
 }
 
-async function keyAction(url: string, provider: ProviderId, key: string): Promise<KeyActionResult> {
+async function keyAction(
+  url: string,
+  provider: ProviderId,
+  key: string,
+  agnesConfig?: { baseUrl?: string; model?: string; authStyle?: string }
+): Promise<KeyActionResult> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ provider, key }),
+    body: JSON.stringify(agnesConfig ? { provider, key, agnesConfig } : { provider, key }),
   });
   // HTTP 400 with { ok:false, message } is a normal outcome (invalid key) —
   // surface it as a result, not an exception.
@@ -91,12 +101,20 @@ async function keyAction(url: string, provider: ProviderId, key: string): Promis
   return (await res.json()) as KeyActionResult;
 }
 
-export function testApiKey(provider: ProviderId, key: string): Promise<KeyActionResult> {
-  return keyAction("/api/keys/test", provider, key);
+export function testApiKey(
+  provider: ProviderId,
+  key: string,
+  agnesConfig?: { baseUrl?: string; model?: string; authStyle?: string }
+): Promise<KeyActionResult> {
+  return keyAction("/api/keys/test", provider, key, agnesConfig);
 }
 
-export function saveApiKey(provider: ProviderId, key: string): Promise<KeyActionResult> {
-  return keyAction("/api/keys/save", provider, key);
+export function saveApiKey(
+  provider: ProviderId,
+  key: string,
+  agnesConfig?: { baseUrl?: string; model?: string; authStyle?: string }
+): Promise<KeyActionResult> {
+  return keyAction("/api/keys/save", provider, key, agnesConfig);
 }
 
 export async function deleteApiKey(provider: ProviderId): Promise<string> {
@@ -111,6 +129,14 @@ export async function deleteApiKey(provider: ProviderId): Promise<string> {
 export async function fetchChatHistory(): Promise<ChatMessageDTO[]> {
   const data = await getJson<{ messages: ChatMessageDTO[] }>("/api/chat");
   return data.messages;
+}
+
+/** Clears the whole assistant history ("Effacer l'historique"). */
+export async function clearChatHistory(): Promise<number> {
+  const res = await fetch("/api/chat", { method: "DELETE" });
+  if (!res.ok) throw new ApiError(await extractMessage(res), res.status);
+  const data = (await res.json().catch(() => ({}))) as { count?: number };
+  return data.count ?? 0;
 }
 
 export async function fetchStats(): Promise<StatsDTO> {
@@ -281,6 +307,77 @@ export async function ttsToBlob(body: TtsRequestBody): Promise<Blob> {
   });
   if (!res.ok) throw new ApiError(await extractMessage(res), res.status);
   return await res.blob();
+}
+
+// ---------- Exams ----------
+
+export async function fetchExams(): Promise<ExamDTO[]> {
+  const data = await getJson<{ exams: ExamDTO[] }>("/api/exams");
+  return data.exams;
+}
+
+export async function fetchExamDetail(id: string): Promise<ExamDetailDTO> {
+  const data = await getJson<{ exam: ExamDetailDTO }>(
+    `/api/exams/${encodeURIComponent(id)}`
+  );
+  return data.exam;
+}
+
+export async function createExam(body: {
+  rawText: string;
+  title?: string;
+  provider?: ProviderId;
+}): Promise<ExamDTO> {
+  const res = await fetch("/api/exams", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new ApiError(await extractMessage(res), res.status);
+  return unwrap<ExamDTO>(await res.json(), "exam");
+}
+
+export async function createExamFile(
+  file: File,
+  opts?: { title?: string; provider?: ProviderId }
+): Promise<ExamDTO> {
+  const fd = new FormData();
+  fd.append("file", file);
+  if (opts?.title) fd.append("title", opts.title);
+  if (opts?.provider) fd.append("provider", opts.provider);
+  const res = await fetch("/api/exams", { method: "POST", body: fd });
+  if (!res.ok) throw new ApiError(await extractMessage(res), res.status);
+  return unwrap<ExamDTO>(await res.json(), "exam");
+}
+
+export async function deleteExam(id: string): Promise<void> {
+  const res = await fetch(`/api/exams/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw new ApiError(await extractMessage(res), res.status);
+}
+
+/** Associates the exam with courses (empty array = "sans lien particulier"). */
+export async function linkExam(id: string, documentIds: string[]): Promise<ExamDTO> {
+  const res = await fetch(`/api/exams/${encodeURIComponent(id)}/link`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ documentIds }),
+  });
+  if (!res.ok) throw new ApiError(await extractMessage(res), res.status);
+  return unwrap<ExamDTO>(await res.json(), "exam");
+}
+
+/** Adds a manual question (open or hand-typed QCM) to an exam. */
+export async function addExamQuestion(
+  id: string,
+  body: { prompt: string; options?: string[]; type?: "qcm" | "qa" }
+): Promise<ExamQuestionDTO> {
+  const res = await fetch(`/api/exams/${encodeURIComponent(id)}/questions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new ApiError(await extractMessage(res), res.status);
+  return unwrap<ExamQuestionDTO>(await res.json(), "question");
 }
 
 // ---------- Scanned documents: OCR correction & PDF conversion ----------

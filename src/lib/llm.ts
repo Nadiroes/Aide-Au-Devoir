@@ -215,16 +215,61 @@ export const mistralProvider: LlmProvider = {
   },
 };
 
-// ---------- Agnes (generic OpenAI-compatible) ----------
+// ---------- Agnes (generic OpenAI-compatible, configurable from the UI) ----------
 
-const AGNES_BASE = (process.env.AGNES_BASE_URL || "").replace(/\/+$/, "");
-const AGNES_MODEL = process.env.AGNES_MODEL || "agnes-chat";
-const AGNES_TEST_PATH = process.env.AGNES_TEST_PATH || "/models";
-const AGNES_AUTH_STYLE = (process.env.AGNES_AUTH_STYLE || "bearer").toLowerCase();
+import type { AgnesConfig } from "@/lib/types";
+export type { AgnesConfig };
 
-function agnesHeaders(key: string): Record<string, string> {
-  if (AGNES_AUTH_STYLE === "x-api-key") return { "x-api-key": key };
-  if (AGNES_AUTH_STYLE === "query") return {};
+const AGNES_DEFAULTS = {
+  baseUrl: (process.env.AGNES_BASE_URL || "").replace(/\/+$/, ""),
+  model: process.env.AGNES_MODEL || "agnes-chat",
+  testPath: process.env.AGNES_TEST_PATH || "/models",
+  authStyle: ((process.env.AGNES_AUTH_STYLE || "bearer").toLowerCase() as AgnesConfig["authStyle"]),
+};
+
+const AGNES_SETTING_KEY = "agnes_config";
+
+/**
+ * Agnes configuration = DB (Paramètres UI, AppSetting) overlaid on env defaults.
+ * Read on every call so saving in Paramètres takes effect immediately.
+ */
+export async function getAgnesConfig(): Promise<AgnesConfig> {
+  let stored: Partial<AgnesConfig> = {};
+  try {
+    const row = await db.appSetting.findUnique({ where: { key: AGNES_SETTING_KEY } });
+    if (row) stored = JSON.parse(row.value) as Partial<AgnesConfig>;
+  } catch {
+    // DB unavailable — fall back to env only.
+  }
+  const style = String(stored.authStyle ?? AGNES_DEFAULTS.authStyle);
+  return {
+    baseUrl: String(stored.baseUrl ?? AGNES_DEFAULTS.baseUrl).replace(/\/+$/, ""),
+    model: stored.model || AGNES_DEFAULTS.model,
+    authStyle: (style === "x-api-key" || style === "query" ? style : "bearer") as AgnesConfig["authStyle"],
+  };
+}
+
+export async function saveAgnesConfig(config: Partial<AgnesConfig>): Promise<AgnesConfig> {
+  const current = await getAgnesConfig();
+  const next: AgnesConfig = {
+    baseUrl: String(config.baseUrl ?? current.baseUrl).replace(/\/+$/, ""),
+    model: config.model?.trim() || current.model,
+    authStyle:
+      config.authStyle === "x-api-key" || config.authStyle === "query" || config.authStyle === "bearer"
+        ? config.authStyle
+        : current.authStyle,
+  };
+  await db.appSetting.upsert({
+    where: { key: AGNES_SETTING_KEY },
+    update: { value: JSON.stringify(next) },
+    create: { key: AGNES_SETTING_KEY, value: JSON.stringify(next) },
+  });
+  return next;
+}
+
+function agnesHeaders(config: AgnesConfig, key: string): Record<string, string> {
+  if (config.authStyle === "x-api-key") return { "x-api-key": key };
+  if (config.authStyle === "query") return {};
   return { Authorization: `Bearer ${key}` };
 }
 
@@ -232,45 +277,54 @@ export const agnesProvider: LlmProvider = {
   id: "agnes",
   label: "Agnes",
   description:
-    "Adaptateur OpenAI-compatible (URL configurable côté serveur via AGNES_BASE_URL).",
+    "Serveur OpenAI-compatible — URL et clé configurables dans Paramètres (testez puis enregistrez).",
   builtIn: false,
-  serverReady: Boolean(AGNES_BASE),
-  serverNote: AGNES_BASE
-    ? undefined
-    : "Serveur non configuré : définissez AGNES_BASE_URL (+ AGNES_MODEL) dans l'environnement.",
+  serverReady: true, // dynamic: evaluated per request from DB/env config
 
   async verify(key) {
-    if (!AGNES_BASE) {
-      return { ok: false, message: "Agnes non configuré côté serveur (AGNES_BASE_URL manquant)." };
+    const config = await getAgnesConfig();
+    if (!config.baseUrl) {
+      return {
+        ok: false,
+        message: "Renseignez d'abord l'URL du serveur Agnes (ex. http://…/v1) ci-dessus.",
+      };
     }
     try {
-      const url = AGNES_AUTH_STYLE === "query" ? `${AGNES_BASE}${AGNES_TEST_PATH}?api_key=${encodeURIComponent(key)}` : `${AGNES_BASE}${AGNES_TEST_PATH}`;
-      const res = await fetch(url, { headers: agnesHeaders(key), signal: AbortSignal.timeout(15_000) });
-      if (res.ok) return { ok: true, message: "Clé Agnes valide ✓" };
+      const url =
+        config.authStyle === "query"
+          ? `${config.baseUrl}${AGNES_DEFAULTS.testPath}?api_key=${encodeURIComponent(key)}`
+          : `${config.baseUrl}${AGNES_DEFAULTS.testPath}`;
+      const res = await fetch(url, {
+        headers: agnesHeaders(config, key),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (res.ok) return { ok: true, message: `Clé Agnes valide ✓ (${config.baseUrl})` };
       if (res.status === 401 || res.status === 403)
-        return { ok: false, message: "Clé Agnes refusée. Vérifiez la clé." };
+        return { ok: false, message: "Clé Agnes refusée. Vérifiez la clé et le style d'authentification." };
       return { ok: false, message: shortHttpError(res.status, await res.text().catch(() => "")) };
     } catch (err) {
       return {
         ok: false,
-        message: `Réseau Agnes injoignable : ${err instanceof Error ? err.message : "erreur"}`,
+        message: `Serveur Agnes injoignable : ${err instanceof Error ? err.message : "erreur"}`,
       };
     }
   },
 
   async chat({ messages, temperature, onToken, apiKey }) {
-    if (!AGNES_BASE) throw new Error("Agnes non configuré côté serveur (AGNES_BASE_URL manquant).");
+    const config = await getAgnesConfig();
+    if (!config.baseUrl)
+      throw new Error("Agnes non configuré : renseignez l'URL du serveur dans Paramètres.");
     const key = apiKey ?? (await getStoredKey("agnes"));
     if (!key) throw new Error("Aucune clé Agnes enregistrée. Ajoutez-la dans Paramètres.");
     const url =
-      AGNES_AUTH_STYLE === "query"
-        ? `${AGNES_BASE}/chat/completions?api_key=${encodeURIComponent(key)}`
-        : `${AGNES_BASE}/chat/completions`;
+      config.authStyle === "query"
+        ? `${config.baseUrl}/chat/completions?api_key=${encodeURIComponent(key)}`
+        : `${config.baseUrl}/chat/completions`;
     const content = await streamOpenAiSse(
       url,
-      agnesHeaders(key),
+      { ...agnesHeaders(config, key), "Content-Type": "application/json" },
       {
-        model: AGNES_MODEL,
+        model: config.model,
         messages,
         temperature: temperature ?? 0.3,
         stream: Boolean(onToken),

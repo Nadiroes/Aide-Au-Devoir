@@ -90,6 +90,7 @@ import type {
   RevisionQADTO,
   RevisionRequestBody,
   RevisionVerdict,
+  TtsEngine,
 } from "@/lib/types";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -397,6 +398,7 @@ export function RevisionSection({
   // Audio reader preferences (persisted in Paramètres).
   const [voice, setVoice] = useState<string>("auto");
   const [speed, setSpeed] = useState<number>(1);
+  const [ttsEngine, setTtsEngine] = useState<TtsEngine>("auto");
 
   const player = useTtsPlayer();
   const abortRef = useRef<AbortController | null>(null);
@@ -436,6 +438,7 @@ export function RevisionSection({
     const prefs = getTtsPrefs();
     setVoice(prefs.voice ?? "auto");
     setSpeed(prefs.speed ?? 1);
+    setTtsEngine(prefs.engine);
   }, []);
 
   // Non-critical: folder list for the grouped selector.
@@ -532,7 +535,10 @@ export function RevisionSection({
           if (event.id === "coach" && getTtsPrefs().autoread && detailRef.current) {
             const current = liveRef.current;
             if (current && current.mode === "question" && current.userText === null && current.coach.trim().length > 0) {
-              player.play(stripMd(current.coach), { language: detailRef.current.language });
+              player.play(stripMd(current.coach), {
+                language: detailRef.current.language,
+                engine: getTtsPrefs().engine,
+              });
             }
           }
           break;
@@ -1006,6 +1012,7 @@ export function RevisionSection({
                               voice: voice === "auto" ? undefined : voice,
                               speed,
                               language,
+                              engine: ttsEngine,
                             });
                           } else {
                             player.resume();
@@ -1136,6 +1143,7 @@ export function RevisionSection({
                               voice: voice === "auto" ? undefined : voice,
                               speed,
                               language,
+                              engine: ttsEngine,
                             })
                           }
                           className="h-9 gap-1.5 border-red-200 bg-white text-red-700 hover:bg-red-50"

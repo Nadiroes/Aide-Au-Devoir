@@ -56,10 +56,32 @@ export type ChatEvent =
   | { type: "agent.done"; id: AgentId; label: string; summary: string; content?: string }
   | { type: "agent.error"; id: AgentId; message: string }
   | { type: "retrieval.hit"; hit: RetrievalHit }
+  | { type: "qcm.hit"; hit: QcmHit }
   | { type: "answer.token"; token: string }
   | { type: "tutor.token"; token: string }
-  | { type: "pipeline.done"; messageId: string; answer: string; tutor: string }
+  | {
+      type: "pipeline.done";
+      messageId: string;
+      answer: string;
+      tutor: string;
+      qcm?: QcmHit[];
+      category?: string;
+    }
   | { type: "pipeline.error"; message: string };
+
+/** A stored exam answer surfaced by the Assistant's QCM bank matcher. */
+export interface QcmHit {
+  questionId: string;
+  examId: string;
+  examTitle: string;
+  idx: number;
+  type: "qcm" | "qa";
+  prompt: string;
+  options: string[];
+  answer: string | null;
+  refs: string[];
+  score: number; // 0..1 token overlap with the asked question
+}
 
 // ---------- Ingestion events (SSE: POST /api/documents) ----------
 
@@ -166,8 +188,15 @@ export interface ProviderStatusDTO {
   configured: boolean;
   masked?: string | null;
   verifiedAt?: string | null;
-  serverReady: boolean; // agnes: AGNES_BASE_URL set
+  serverReady: boolean; // agnes: server URL configured (DB or env)
   serverNote?: string;
+}
+
+/** Agnes server configuration (non-secret part — editable in Paramètres). */
+export interface AgnesConfig {
+  baseUrl: string;
+  model: string;
+  authStyle: "bearer" | "x-api-key" | "query";
 }
 
 export interface ChatMessageDTO {
@@ -178,7 +207,9 @@ export interface ChatMessageDTO {
   plan?: string | null;
   provider: string;
   mode: string;
+  category: string; // rubric for the "Réponses" view
   sources?: RetrievalHit[] | null;
+  qcmSources?: QcmHit[] | null; // matching stored QCM answers
   createdAt: string;
 }
 

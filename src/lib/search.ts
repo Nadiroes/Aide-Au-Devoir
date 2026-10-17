@@ -18,6 +18,11 @@ function normalizeToken(word: string): string {
     .toLowerCase();
 }
 
+/** French-aware tokenization (exported for the QCM bank matcher). */
+export function tokenizeText(text: string): string[] {
+  return tokenize(text);
+}
+
 function tokenize(text: string): string[] {
   return normalizeToken(text)
     .split(/[^a-z0-9]+/)

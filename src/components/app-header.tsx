@@ -1,15 +1,16 @@
 "use client";
 
-import { BookOpen, BookOpenCheck, GraduationCap, Home, MessageSquare, Settings } from "lucide-react";
+import { BookOpen, BookOpenCheck, ClipboardCheck, GraduationCap, Home, MessageSquare, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-export type TabId = "accueil" | "cours" | "revision" | "assistant" | "parametres";
+export type TabId = "accueil" | "cours" | "revision" | "examens" | "assistant" | "parametres";
 
 const NAV_ITEMS: { id: TabId; label: string; icon: typeof Home }[] = [
   { id: "accueil", label: "Accueil", icon: Home },
   { id: "cours", label: "Cours", icon: BookOpen },
   { id: "revision", label: "Révision", icon: BookOpenCheck },
+  { id: "examens", label: "Examens", icon: ClipboardCheck },
   { id: "assistant", label: "Assistant", icon: MessageSquare },
   { id: "parametres", label: "Paramètres", icon: Settings },
 ];

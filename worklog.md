@@ -237,3 +237,44 @@ Stage Summary:
 - Audio fixed everywhere incl. legacy docs (auto-heal on course open = "il parcourt le document pour la lecture" as requested).
 - New formats live: EPUB (chapters), audio mp3/wav/m4a/ogg/webm/aac/flac (ffmpeg split → ASR), scanned/handwritten images (OCR → human correction → clean PDF → agents indexed → revision starts).
 - Demos kept: Les Volcans (EPUB), Les Séismes (audio), La Mitose (scan→PDF corrigé), The Water Cycle (EN).
+
+---
+Task ID: 4
+Agent: main (Z.ai Code)
+Task: Voix TTS françaises (accent) + moteur voix système + testeur + Agnes configurable + Assistant (banque QCM, suppression historique, rubrique Réponses, Tab=envoyer)
+
+Work Log:
+- Test objectif des 7 voix serveur Z.ai en français : synthèse FR → re-transcription ASR → proxy WER. Toutes anglophones (76–100 % d'erreur) ; classement : chuichui < tongtong < jam < … (la meilleure reste médiocre en FR).
+- types.ts : TtsEngine ("auto" | "system" | "serveur"), TTS_SAMPLE_TEXT, BIBLE_REF_PATTERN, descriptions TTS_VOICES honnêtes réordonnées, AgnesConfig.
+- tts.ts : autoVoice(fr) → chuichui (meilleure mesurée), en → jam.
+- use-tts-player.ts réécrit : moteur "system" via Web Speech API (voix FR natives de l'OS : Amélie/Hortense/Google…), tri qualité des voix, attente voiceschanged, pause/resume/stop, repli automatique sur la voix serveur si aucune voix système, engineUsed + voiceLabel exposés.
+- settings-section.tsx : TtsPrefs.engine (LS ad_tts_engine), sélecteur « Moteur de lecture » avec explication accent, détection + libellé de la voix système (getSystemVoiceLabel), deux boutons test : « Tester la voix système » (SpeechSynthesis) et « Tester la voix serveur » (POST /api/tts, échantillon TTS_SAMPLE_TEXT).
+- revision-section.tsx : engine passé aux 3 sites player.play (bouton Écouter, autoread coach, Réessayer).
+- Bug « bouton lecture désactivé » : confirmé corrigé en E2E (auto-heal textContent existant côté GET /api/documents/[id] ; le bouton devient actif et charge tout le document, ex. Segment 1/974).
+- Banque QCM → Assistant : lib/exam.ts matchQcmBank() (tokenisation FR partagée, overlap ≥ 0.22, top 3) ; agents.ts consulte la banque dans les DEUX modes, émet qcm.hit, injecte <banque_qcm> au Solveur, persiste qcmSources + category (classifyCategory : « Examens & QCM » > subject du cours > « Théologie & Bible » > « Général »).
+- ChatMessage : colonnes category + qcmSources (db push) ; /api/chat GET (100 derniers, category/qcmSources), DELETE (efface tout) ; ChatEvent.qcm.hit + pipeline.done{qcm,category}.
+- assistant-section.tsx : QcmBankCard (bonne option sur FOND VERT + ✓, refs 📖, score), cartes dans la réponse en cours + dans l'historique ; bascule Historique / Réponses par catégorie avec recherche ; bouton « Effacer tout l'historique » (AlertDialog) ; Tab = envoyer (Maj+Tab intact, Ctrl+Entrée conservé).
+- Agnes : llm.ts dynamique (getAgnesConfig/saveAgnesConfig via AppSetting "agnes_config" par-dessus les env), serveur URL + modèle + style d'auth éditables ; /api/keys GET expose agnesConfig + serverReady dynamique ; /api/keys/save et /api/keys/test (route créée — elle manquait, le bouton Tester était en 404 !) acceptent agnesConfig ; carte Paramètres avec URL/modèle/auth style.
+
+Stage Summary:
+- L'accent français est résolu par les voix SYSTÈME du navigateur (accent natif réel) ; les voix serveur restent en repli avec la meilleure (chuichui) par défaut et un testeur d'écoute pour choisir.
+- L'Assistant retrouve les réponses d'examens déjà traitées (fond vert sur la bonne option) et l'historique est gérable (effacement + rubrique par catégories + recherche).
+- Agnes est entièrement configurable depuis l'UI ; bug latent /api/keys/test 404 corrigé.
+
+---
+Task ID: 5
+Agent: main (Z.ai Code)
+Task: Page « Examens » — import, association aux cours, résolution par les agents, réf. bibliques, QCM manuel, chat au fil de l'exercice
+
+Work Log:
+- Prisma : Exam (rawText, kind, linkStatus, documentIds JSON, theology), ExamQuestion (type, prompt, options JSON, answer, refs JSON, rationale), ExamMessage (role, content, refs) + AppSetting ; db push OK.
+- lib/exam.ts : parseExamText (LLM JSON strict + fallback regex Q1/A) B)), detectTheology (mots-clés FR), extractBibleRefs (regex livres FR), retrieveForExam (BM25 restreint aux cours liés), solveExamQuestion (Résolveur JSON {answer,refs,rationale} + consigne théologie : réf. bibliques TOUJOURS, même non demandées ; Vérificateur fusionne refs LLM + regex), matchQcmBank, classifyCategory, runExamChat (historique + résumé questions/réponses + retrieval).
+- Routes : /api/exams (GET liste, POST JSON/multipart via extractText : PDF/DOCX/TXT/MD/images OCR/audio ASR/EPUB), /api/exams/[id] (GET détail, DELETE), …/parse (SSE 📋 Examinateur), …/link (association, vide = sans), …/solve (SSE toutes ou une question : 🔍→✍️→🧾, question.answered par question), …/questions (QCM manuel), …/chat (SSE au fil de l'exercice, messages persistés).
+- exams-section.tsx (~1500 lignes) : import (coller/fichier), parse auto → dialog d'association (« Les agents ont une question… ») → résolution automatique une fois validé ; liste d'examens (badges kind/théologie/cours liés/5-5, suppression) ; détail : progression, cartes questions (QCM avec BONNE OPTION SUR FOND VERT + ✓ Bonne réponse, refs 📖 ambre, rationale, Écouter la question), agents en direct, « Ajouter une question » (QCM manuel A-H), chat au fil de l'exercice (Tab/Ctrl+Entrée pour envoyer) ; épinglé responsive (lg:grid-cols-[320px_1fr]), footer collé.
+- app-header/page.tsx : onglet « Examens » (ClipboardCheck) entre Révision et Assistant.
+- Fix lint : boucle infinie évitée (player.stop stabilisé via stopPlayer dans les deps), dialog d'association remonté par key au lieu de setState-in-effect.
+- E2E navigateur : import d'un examen théologie 4 questions → theology=True, subject auto ; liaison à 2 cours RBIF → résolution : Q1 B. Pierre (Luc 22:54-62…), Q2 visions d'Ézéchiel (Ézéchiel 1:4-28), Q3 B. Antioche (Actes 11:26), Q4 Agapè (1 Cor 13:4-7) — réf. bibliques systématiques ; QCM manuel 27 livres NT → C. 27 ; chat : Actes 11:26 confirmé ; Assistant : banque QCM hit score=1, catégorie « Examens & QCM », fond vert ✓ ; Tab-send OK ; suppression historique → 0 ; Révision : bouton Écouter actif, Segment 1/974, lecture réelle (logs [tts] cache MISS voix chuichui).
+
+Stage Summary:
+- Données de démo laissées en base : « Examen de théologie biblique — Session 2026 » (5 questions résolues avec références), lié à « Doctrine Biblique » et « La Personne du Saint-Esprit ».
+- Vision candidats libres posée : cours + examens + banque QCM + mémoire agents = révision complète d'un programme.

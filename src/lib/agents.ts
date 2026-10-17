@@ -7,7 +7,8 @@
 import { db } from "@/lib/db";
 import { getProvider, type LlmMessage } from "@/lib/llm";
 import { searchChunks, fetchFullContents, buildContext } from "@/lib/search";
-import type { ChatEvent, ChatMode, ProviderId, RetrievalHit } from "@/lib/types";
+import { matchQcmBank, classifyCategory } from "@/lib/exam";
+import type { ChatEvent, ChatMode, ProviderId, QcmHit, RetrievalHit } from "@/lib/types";
 
 export interface PipelineOptions {
   question: string;
@@ -27,9 +28,12 @@ const SOLVER_SYSTEM =
   "Tu es un professeur particulier bienveillant qui aide un élève français. " +
   "Réponds en français, structuré en Markdown (titres courts, listes, étapes numérotées). " +
   "Appuie-toi en priorité sur les extraits fournis entre <cours>…</cours> et indique de quel " +
-  "cours vient l'information (ex. : « d'après le cours … »). Si l'information ne s'y trouve pas, " +
-  "réponds avec tes connaissances en le signalant clairement. Termine par une section " +
-  "**À retenir** de 2 à 3 puces.";
+  "cours vient l'information (ex. : « d'après le cours … »). S'il existe des réponses déjà " +
+  "validées dans <banque_qcm>…</banque_qcm> qui répondent à la question, appuie-toi dessus et " +
+  "précise qu'elles viennent de la banque de QCM. Si l'information ne s'y trouve pas, réponds " +
+  "avec tes connaissances en le signalant clairement. Si le contexte est théologique ou " +
+  "biblique, insère les références bibliques complètes (Livre Chapitre:Versets) utiles, même si " +
+  "elles ne sont pas demandées. Termine par une section **À retenir** de 2 à 3 puces.";
 
 const TUTOR_SYSTEM =
   "À partir de la réponse du professeur, rédige une fiche élève en Markdown, simple et " +
@@ -83,10 +87,27 @@ export async function runChatPipeline(opts: PipelineOptions, emit: Emit): Promis
 
   if (aborted(signal)) return;
 
-  // ---------- 2. Chercheur ----------
+  // ---------- 2. Chercheur + banque de QCM ----------
   let hits: RetrievalHit[] = [];
+  let qcmHits: QcmHit[] = [];
   let context = "(aucun extrait de cours pertinent)";
   emit({ type: "agent.start", id: "retriever", label: "🔍 Chercheur" });
+
+  // The QCM bank is consulted in BOTH modes: an exam answer already treated is
+  // the most reliable source, whatever the mode of the question.
+  try {
+    qcmHits = await matchQcmBank(question, 3);
+    for (const hit of qcmHits) emit({ type: "qcm.hit", hit });
+    if (qcmHits.length) {
+      emit({
+        type: "agent.log",
+        id: "retriever",
+        message: `${qcmHits.length} réponse(s) retrouvée(s) dans la banque de QCM.`,
+      });
+    }
+  } catch {
+    // Bank unavailable — continue without it.
+  }
 
   if (mode === "libre") {
     emit({
@@ -157,6 +178,19 @@ export async function runChatPipeline(opts: PipelineOptions, emit: Emit): Promis
     emit({ type: "agent.start", id: "solver", label: "✍️ Solveur" });
     emit({ type: "agent.log", id: "solver", message: "Rédaction de la réponse, étape par étape…" });
 
+    const qcmBlock = qcmHits.length
+      ? qcmHits
+          .map(
+            (h, i) =>
+              `[QCM ${i + 1} — « ${h.examTitle} »]
+Question : ${h.prompt}
+` +
+              (h.options.length ? `Options : ${h.options.join(" | ")}\n` : "") +
+              `Réponse validée : ${h.answer ?? ""}`
+          )
+          .join("\n\n")
+      : "";
+
     const messages: LlmMessage[] = [{ role: "system", content: SOLVER_SYSTEM }];
     for (const h of history.slice(-3)) {
       messages.push({ role: "user", content: h.question });
@@ -164,7 +198,10 @@ export async function runChatPipeline(opts: PipelineOptions, emit: Emit): Promis
     }
     messages.push({
       role: "user",
-      content: `<cours>\n${context}\n</cours>\n\nPlan proposé :\n${plan || "(non disponible)"}\n\nQuestion : ${question}`,
+      content:
+        `<cours>\n${context}\n</cours>\n\n` +
+        (qcmBlock ? `<banque_qcm>\n${qcmBlock}\n</banque_qcm>\n\n` : "") +
+        `Plan proposé :\n${plan || "(non disponible)"}\n\nQuestion : ${question}`,
     });
 
     const res = await provider.chat({
@@ -216,6 +253,12 @@ export async function runChatPipeline(opts: PipelineOptions, emit: Emit): Promis
 
   // ---------- Persist + done ----------
   try {
+    const category = classifyCategory(
+      question,
+      answer,
+      hits.map((h) => h.subject),
+      qcmHits
+    );
     const saved = await db.chatMessage.create({
       data: {
         question,
@@ -224,11 +267,13 @@ export async function runChatPipeline(opts: PipelineOptions, emit: Emit): Promis
         plan: plan || null,
         provider: providerId,
         mode,
+        category,
         sources: hits.length ? JSON.stringify(hits) : null,
+        qcmSources: qcmHits.length ? JSON.stringify(qcmHits) : null,
       },
     });
-    emit({ type: "pipeline.done", messageId: saved.id, answer, tutor });
+    emit({ type: "pipeline.done", messageId: saved.id, answer, tutor, qcm: qcmHits, category });
   } catch {
-    emit({ type: "pipeline.done", messageId: "", answer, tutor });
+    emit({ type: "pipeline.done", messageId: "", answer, tutor, qcm: qcmHits });
   }
 }
